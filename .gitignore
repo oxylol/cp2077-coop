@@ -1,26 +1,34 @@
-# xmake
-.xmake/
-build/
+# Tools / IDEs
+vs20*/
 vsxmake*/
-compile_commands.json
-
-# IDEs
 .vs/
-.vscode/
-.idea/
-*.user
+.idea
+compile_commands.json
+code/scripting/CyberpunkSdk/CyberpunkSdk.csproj.user
+code/scripting/JobSystem/Properties/PublishProfiles/FolderProfile.pubxml.user
 
-# Local test output
-probe-results.txt
-probe-*.txt
-anim-record.txt
-anim-functions.txt
-anim-graphs-*.txt
-client-id*.txt
+# Dependencies
+.xmake/*
+package/*
+.cache/*
+node_modules
 
-# Build objects
-*.obj
-*.o
+# Generated
+**.netpack.gen.cpp
+**.netpack.gen.h
 
-# redscript checker checkout (tools/reds-check)
-.reds-check/
+# Builds
+build/*
+out/*
+dist
+distrib/*
+
+# Miscellaneous
+code/client/Archives/CyberpunkMP.zip
+Cyberpunk2077.exe*
+imgui.ini
+# Local secrets / runtime state (docker compose)
+.env
+config/
+logs/
+plugins/

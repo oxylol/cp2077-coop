@@ -1,0 +1,72 @@
+#include "Settings.h"
+#include <RED4ext/LaunchParameters.hpp>
+
+void Settings::Load()
+{
+    Settings& settings = Get();
+
+    auto& launchParameters = RED4ext::GetLaunchParameters();
+
+    if (launchParameters.Contains(RED4ext::CString("-online")))
+        settings.enabled = true;
+
+    bool ipFromArgs = false;
+    bool portFromArgs = false;
+
+    if (const auto ip = launchParameters.Get("-ip"); ip)
+    {
+        if (ip->size > 0)
+        {
+            settings.ip = (*ip)[0].c_str();
+            ipFromArgs = true;
+        }
+    }
+
+    if (const auto port = launchParameters.Get("-port"); port)
+    {
+        if (port->size > 0)
+        {
+            settings.port = std::strtoul((*port)[0].c_str(), nullptr, 10) & 0xFFFF;
+            portFromArgs = true;
+        }
+    }
+
+    // Report what we actually parsed. The game's parser only fills these in for the
+    // --ip=<addr> / --port=<n> form; "-ip <addr>" produces an empty value list and
+    // silently leaves the defaults in place, which looks identical to a dead server.
+    spdlog::info("Server address: {}:{} (ip {}, port {})", settings.ip, settings.port,
+                 ipFromArgs ? "from launch args" : "DEFAULT - --ip= was not parsed",
+                 portFromArgs ? "from launch args" : "DEFAULT - --port= was not parsed");
+
+    if (const auto name = launchParameters.Get("-name"); name && name->size > 0)
+        settings.name = (*name)[0].c_str();
+    if (settings.name.empty())
+    {
+        // No --name=: tell instances on the same PC apart by their process id.
+        settings.name = fmt::format("V-{}", GetCurrentProcessId() % 1000).c_str();
+    }
+    spdlog::info("Player name: {}", settings.name);
+
+    if (const auto mods = launchParameters.Get("-mod"); mods)
+    {
+        for (const auto& mod : *mods)
+            settings.mods.push_back(mod.c_str());
+    }
+
+    if (launchParameters.Contains("-rpc"))
+    {
+        settings.RpcOnly = true;
+    }
+
+    if (const auto rpcDir = launchParameters.Get("-rpcdir"); rpcDir)
+    {
+        if (rpcDir->size > 0)
+        {
+            // For some reason cyberpunk adds a \ at the start and end of the path...
+            std::string path = std::string((*rpcDir)[0].c_str());
+            path = path.substr(1, path.length() - 2);
+
+            settings.RpcPath = path;
+        }
+    }
+}
