@@ -40,7 +40,15 @@ add_requires(
 -- and _DEBUG", so it is built in Debug there. Its recipe also asks for the newest protobuf and abseil, which put a
 -- second protobuf (36.x) and abseil next to the pinned ones above; it gets the same versions instead. ICE (P2P
 -- connections through NAT) isn't used.
-add_requireconfs("gamenetworkingsockets", {configs = {debug = is_mode("debug"), ice = false}})
+--
+-- GNS compiles protobuf's headers into itself, so it only links against the protobuf it was built with. xmake
+-- identifies a package build by its own settings, not its dependencies' versions, and would happily use a
+-- precompiled GNS (xmake's build-artifacts, built against the newest protobuf) or one built earlier against
+-- another protobuf: LNK2005/LNK2001 on google::protobuf and absl::lts_2026... symbols. So GNS is always built here
+-- (build = true), and the define, which does nothing else, gives this build its own identity; change it along with
+-- the protobuf/abseil versions.
+add_requireconfs("gamenetworkingsockets", {build = true, configs = {
+    debug = is_mode("debug"), ice = false, cxflags = "-DCYBERPUNKMP_GNS_PROTOBUF_29_3_ABSEIL_20250127_0"}})
 add_requireconfs("gamenetworkingsockets.protobuf-cpp", {override = true, version = "29.3"})
 add_requireconfs("gamenetworkingsockets.abseil", {override = true, version = "20250127.0"})
 
