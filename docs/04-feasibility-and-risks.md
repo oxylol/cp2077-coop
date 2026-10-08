@@ -100,7 +100,7 @@ Deliverable 2. Ratings:
 
 ## 3. Reverse-engineering spikes (do these first)
 
-Ordered by how much of the design they decide. Each is a 1–5 day experiment with a written result in `docs/spikes/Sxx.md` before dependent code is written.
+Ordered by how much of the design they decide. Each is a 1–5 day experiment with a written result before dependent code is written. **Results so far: [08-spike-results.md](08-spike-results.md)** (S1, S2, S3, S8 run; S1 vehicles confirmed; S2 failed as first tried).
 
 | # | Question | How to check | Decides |
 |---|---|---|---|

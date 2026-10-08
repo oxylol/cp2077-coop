@@ -575,7 +575,17 @@ void SessionRunner::Pump(IGameAdapter& aGame)
 
     TimeRates rates;
     if (m_activeFlag && m_adapter->LatestTimeRates(rates))
+    {
         aGame.ApplyTimeRates(rates);
+        m_timeRatesApplied = true;
+    }
+    else if (m_timeRatesApplied)
+    {
+        // The session ended (left, kicked, host gone): hand the game normal time once, so a slow motion that was
+        // running doesn't stay on.
+        aGame.ApplyTimeRates(TimeRates{});
+        m_timeRatesApplied = false;
+    }
 }
 
 uint32_t SessionRunner::ActivateTimeField(msg::TimeFieldKind aKind, float aScale, TimeUs aDuration)

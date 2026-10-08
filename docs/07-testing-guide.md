@@ -75,7 +75,7 @@ If you ever want to undo an update, the **Commits** page on GitHub shows every v
 
 ## Part B — Test a new build in the game
 
-Plan about an hour for the full round, about 10 minutes for B1–B3 alone. The order matters: B1–B3 check that the build works; B4 is the experiments that decide the next code.
+Plan about an hour for the full round, about 10 minutes for B1–B3 alone. The order matters: B1–B3 check that the build works; B4 is the experiments that decide the next code; B5 is two games on one PC.
 
 ### B0. Before every test session
 
@@ -83,6 +83,7 @@ Plan about an hour for the full round, about 10 minutes for B1–B3 alone. The o
 2. **Close the game.**
 3. **Mods installed and working:** RED4ext, redscript, Codeware, TweakXL and Cyber Engine Tweaks (CET).
 4. **Don't save the game during experiments** (B4). If you must, save to a new slot, never over an existing one.
+5. **With two games running** (B5): both use the same save folder. Never save manually in either one. Their autosaves land in the same autosave slots, so treat autosaves made during a two-game session as throwaway; the save you loaded stays untouched.
 
 ### B1. Update and build
 
@@ -106,13 +107,13 @@ Plan about an hour for the full round, about 10 minutes for B1–B3 alone. The o
    xmake run coop-tests
    ```
 
-   **Expect:** `47 test(s), 0 failure(s)` (the number grows with new versions). If Windows asks whether to allow `coop-tests` on networks, allow **Private networks**; the tests talk to themselves over local network connections.
+   **Expect:** `48 test(s), 0 failure(s)` (the number grows with new versions). If Windows asks whether to allow `coop-tests` on networks, allow **Private networks**; the tests talk to themselves over local network connections.
 
 The fake-player tool is at `build\windows\x64\releasedbg\coop-sim.exe`. The commands below assume you're in the project folder.
 
-### B2. Smoke test: the game hosts, fake players join
+### B2. Smoke test: the game hosts, fake players join, puppets walk
 
-1. Start the game from Steam and load a save.
+1. Start the game from Steam and load a save. Stand somewhere open, outdoors.
 2. Open the CET overlay (the key you bound) → window **Co-op (dev)** → tab **Session** → **Host**.
 3. In PowerShell:
 
@@ -124,18 +125,33 @@ The fake-player tool is at `build\windows\x64\releasedbg\coop-sim.exe`. The comm
 4. **Expect in the panel:**
    - `hosting, 3 player(s)`
    - two lines `Bot1 … at (x, y)` and `Bot2 … at (x, y)`, whose numbers change as you walk around
-   - `Puppets spawned: 2`
+   - `Puppets spawned: 2`, a line `body: Cp2077Coop.Character.RemotePlayer`, and one line per puppet. While a puppet loads it says `… body not there yet, waiting N s`; once it's there, `off by … m, speed … m/s, move commands …, respawns …`
+   - below those, one line per puppet from the entity system: `managed …, spawning …, spawned …`. **Log puppet state** writes all of it to `probe-results.txt`.
+5. **Walking puppets.** Two NPCs (the plain NPC body; the V-lookalikes slide, see C1) should walk after the bots (the bots follow you, so the puppets follow you too). Walk, then run, then sprint for a bit, then stop. **Note:**
+   - Do they walk, run and sprint with normal animations, or slide, or stand still?
+   - Do they keep up? Roughly what does **off by** show while you move, and does **respawns** go up (a respawn is the puppet popping to the right place)?
+   - If a line says **NO AI (can't walk)**, or the puppets never move: see "If the puppets don't walk" below.
+6. **Loading-screen check:** fast travel somewhere while the bots are connected. After the load the panel should still say `hosting, 3 player(s)`, and the puppets should pop up next to you again within a few seconds.
+7. Press **Leave**. Stop coop-sim with **Ctrl+C**.
 
-   Known for now: the stand-in NPCs appear but don't move. That's what spike S3 is for.
-5. **Loading-screen check (new network thread):** fast travel somewhere while the bots are connected. After the load the panel should still say `hosting, 3 player(s)` and the bots should still be connected.
-6. Press **Leave**. Stop coop-sim with **Ctrl+C**.
+**To see the V-lookalike instead** (looks like your V, slides): copy `red4ext\plugins\Cp2077Coop\coop.ini.example` to `coop.ini` in the same folder (if you don't have one yet), and add at the end:
+
+```ini
+[puppet]
+recordMale=Character.TPP_Player_Cutscene_Male
+recordFemale=Character.TPP_Player_Cutscene_Female
+```
+
+Restart the game. Remove the lines again to go back.
 
 **If something's off:**
-- **SCRIPTS NOT LOADED** in the panel: see the redscript log `r6\logs\redscript_rCURRENT.log`.
+- **SCRIPTS NOT LOADED** in the panel: send me `r6\logs\redscript_rCURRENT.log`. This version's scripts use new game functions (AI move commands), so a mistake there shows up in that log.
 - **coop-sim says "rejected: … version mismatch":** the game and coop-sim come from different builds. Run `xmake` again; it rebuilds both.
 - **The game doesn't start:** check that `bin\x64\cyberpunk2077_addresses.json` exists. Verify the game files in Steam if it doesn't.
 
-### B3. Sandevistan test
+### B3. Sandevistan test (now built into the mod)
+
+Slow motion from a session is now applied by the mod itself; the panel's two switches are gone. (`coop.ini` `[time] applyToGame=false` turns it off.)
 
 1. Host again (B2 step 2), and stand somewhere open.
 2. Start two bots that follow you; the first one triggers a Sandevistan every 15 s for 6 s:
@@ -144,68 +160,58 @@ The fake-player tool is at `build\windows\x64\releasedbg\coop-sim.exe`. The comm
    .\build\windows\x64\releasedbg\coop-sim.exe client --connect 127.0.0.1:27077 --bots 2 --script follow --sandevistan 0.25,6,15
    ```
 
-3. **Expect:**
-   - About 3 s after joining, coop-sim prints `[Bot1] Sandevistan x0.25 for 6.0 s`.
-   - While it runs, the panel's **Time:** line shows `world x0.25, you x0.25`, and coop-sim shows `Bot1 … time: world x0.25, me x1.00 (Sandevistan)` and `Bot2 … time: world x0.25, me x0.25`.
-   - Afterwards everything goes back to `x1.00`.
-4. **Your Sandevistan:** click **Sandevistan x0.25 for 8 s** in the panel.
-   - The panel shows `world x0.25, you x1.00`.
-   - coop-sim shows both bots at `world x0.25, me x0.25`.
-5. **Experimental, part of S8:** tick **Apply to the game** and wait for Bot1's next Sandevistan.
-   - Does your world slow down? Smoothly? Do you move at normal speed or slowed? Does everything return to normal afterwards?
-   - Untick it whenever you like; normal time is restored. If anything fails, it switches itself off and writes the reason to the **Log** tab.
-6. **Leave**, **Ctrl+C**.
+3. **When Bot1 activates:** your world and you slow to x0.25 for 6 s. The Session tab shows `time fields: world slowed to x0.25`, and Bot1's puppet line shows `own time rate x1.00`: Bot1's puppet keeps moving at normal speed while Bot2's puppet is slow. (Easiest to see if you sprint just before, so both puppets are running.)
+4. **Your own:** click **Sandevistan x0.25 for 8 s**. The world and both puppets slow down; you keep full speed (`you exempt`).
+5. **Leaving mid-Sandevistan:** click it again and press **Leave** while it runs. Time must return to normal at once.
+6. **Ctrl+C** the bots.
 
-### B4. The experiments (spikes)
+### B4. The experiments, round E
 
-All in the panel's **Spike probes** tab, in a loaded save. Every probe is wrapped so a wrong guess shows an error instead of breaking anything. Results are written to `probe-results.txt` (and `probe-*.txt` dumps). The **Log** tab shows them too. Do them in this order; write down what you see for each.
+Rounds A–D are done ([results](08-spike-results.md)). All in the panel's **Spike probes** tab → **Round E**. Delete `probe-results.txt` before you start.
 
-**S3: can an NPC be walked around? (most important now)**
-1. **S1** section: leave **Record** as it is → **Spawn record in front of V**.
-2. Walk about 10 m away.
-3. **S3** section → **AI-walk probe NPCs to V**.
-4. **Note:** does it walk (or run) to you with a normal animation, slide without animating, or not move?
-5. **Dump AI and animation types**.
+**E1. S3d: moving a body with less delay** (most important)
+1. Set **Record** to `Cp2077Coop.Character.RemotePlayer` (the plain NPC body), **Spawn record in front of V**, step back ~5 m.
+2. **AI teleport 5 m**. After 1 s the Log tab says how far it moved. **Note:** did it jump 5 m at once?
+3. **AI off, move by teleport every frame**. After 1 s it is moved 12 m forward over 4 s. **Note:** did it move? Smoothly or in jerks? Legs walking, or gliding in one pose? (The Log tab says how far it got; its AI is switched back on afterwards.)
+4. **Follow me with matched speed**, then walk, run, sprint, stop and turn around. **Note:** how closely does it keep up, compared with the puppets in a session? Then **Stop following**.
+5. **Delete probe NPCs and cars**.
 
-**S1: what can look like V?**
-1. **List candidate records** (writes `probe-s1-records.txt`).
-2. Copy a few names containing `TPP_Player` from that file into **Record**, then **Spawn record in front of V** for each.
-3. **Note:** which ones look like V (body, clothing)?
-4. **Dump customization types**.
+**E2. S2d: a puppet that doesn't fight on its own**
+1. Near a gang, spawn the plain NPC body (Record as in E1), then **Make probes passive (senses off)**.
+2. Crosshair on a gang member → **S2b** section → **Diagnose** (can the probe still be seen?).
+3. Start a fight with the gang. **Note:** does the probe still join the fight on its own? Do gang members still shoot at it?
+4. **Delete probe NPCs and cars**.
 
-**S1 vehicles: can we move a car and seat an NPC?**
-1. **Spawn vehicle in front of V**.
-2. **Move probe vehicle 5 m (teleport)**. After 1 s the Log tab says how far it actually moved.
-3. Spawn a probe NPC (S1 section), then **Seat probe NPC as passenger**. After 2 s the Log tab says how far the NPC is from the car. Also look: is it sitting in it?
-4. **Dump vehicle types**.
+**E3. S1c: can the lookalike stop copying your weapon?**
+1. Set **Record** to `Character.TPP_Player_Cutscene_Male` (`…_Female` for a female V), **Spawn record in front of V**.
+2. **List impostor settings** (writes a line to the Log tab), then **Impostor: don't copy weapons**.
+3. Switch V's weapon. **Note:** does the lookalike still switch along?
+4. Also tell me what happened in round D after **Switch the lookalike's impostor off** (did it stop copying your jacket and weapon?).
 
-**S2: do enemies treat an NPC as a player?**
-1. Go near a gang, spawn a probe NPC, **Make probe NPCs player-aligned**.
-2. Start a fight.
-3. **Note:** do enemies shoot the probe NPC? Does it fight back?
+### B5. Two games on one PC (new; S13 showed it works)
 
-**S8: slow motion**
-1. **World 0.25 for 3 s, V exempt**. **Note:** did the world slow while you moved normally?
-2. Spawn a probe NPC, **Probe NPCs individual 2.0 for 3 s**. **Note:** did it speed up?
-3. **Dump time types**.
-4. Plus your notes from B3 step 5.
+Uses lots of memory: set the **Low** preset and **1280×720 windowed** in the game's settings first (both games share the settings), and close other programs.
 
-**Clean up:** **Delete probe NPCs** (also removes probe vehicles).
+1. Start the game from Steam and load a save. Then start it a second time (run `bin\x64\Cyberpunk2077.exe` from the game folder) and load the same save there.
+   The second game becomes **dev instance 2** on its own: its player is called "V 2" and has its own id (the RED4ext log says `dev instance 2`).
+2. **Game 1:** CET overlay → **Co-op (dev)** → **Host**.
+3. **Game 2:** **Join** with the address `127.0.0.1:27077`.
+4. **Expect:** game 1's panel says `hosting, 2 player(s)`; game 2's says it joined. Each game shows the other V as a walking NPC (the plain body, see C1).
+5. Walk around in game 1, then switch to game 2 (Alt+Tab) and look. **Note:**
+   - Does the other player's puppet walk and run after them? How far behind (`off by … m`)?
+   - Does the game you aren't using keep running in the background, or does it pause?
+6. **Sandevistan across games:** in game 1, click **Sandevistan x0.25 for 8 s**, then switch to game 2 quickly. **Note:** is game 2's world slowed, and does game 1's puppet keep normal speed there?
+7. **Leave** in game 2, then in game 1. Close both games **without saving**.
 
-**S13: two copies of the game at once (do it last; heavy on 16 GB)**
-1. Close other programs.
-2. With the game running from Steam, start `bin\x64\Cyberpunk2077.exe` from the game folder a second time.
-3. **Note** exactly what happens: nothing, an error, a Steam message, or a second window. Close the second one if it opened.
-
-### B5. What to send back
+### B6. What to send back
 
 From `<game folder>\bin\x64\plugins\cyber_engine_tweaks\mods\coop-dev\`:
 - `probe-results.txt`
-- every `probe-*.txt` file
+- `probe-s2b.txt` (if you used Diagnose)
 
 Also:
-- Your notes from B2–B4: one or two lines per step are plenty.
-- A screenshot of the Session tab during a bot's Sandevistan.
+- Your notes from B2–B5: one or two lines per step are plenty.
+- A screenshot of the Session tab while the puppets walk after you (with the puppet lines visible).
 - Only if something failed: the newest file in `red4ext\logs\`, plus `r6\logs\redscript_rCURRENT.log` if scripts didn't load.
 
-Delete `probe-results.txt` before the next round, so the next results don't mix with these.
+Earlier rounds and what they decided: [08-spike-results.md](08-spike-results.md).

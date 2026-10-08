@@ -8,10 +8,18 @@ native func OperatorAdd(a: script_ref<String>, b: script_ref<String>) -> String
 native func OperatorAdd(a: Int32, b: Int32) -> Int32
 native func OperatorAssignAdd(out a: Int32, b: Int32) -> Int32
 native func OperatorSubtract(a: Float, b: Float) -> Float
+native func OperatorNeg(a: Float) -> Float
 native func OperatorGreater(a: Float, b: Float) -> Bool
 native func OperatorLess(a: Float, b: Float) -> Bool
 native func OperatorLess(a: Int32, b: Int32) -> Bool
+native func OperatorGreater(a: Int32, b: Int32) -> Bool
+native func OperatorGreaterEqual(a: Float, b: Float) -> Bool
+native func OperatorGreaterEqual(a: Int32, b: Int32) -> Bool
 native func OperatorEqual(a: Int32, b: Int32) -> Bool
+native func OperatorNotEqual(a: Int32, b: Int32) -> Bool
+native func OperatorAnd(a: Int32, b: Int32) -> Int32
+native func OperatorAdd(a: Vector4, b: Vector4) -> Vector4
+native func OperatorMultiply(a: Vector4, b: Float) -> Vector4
 native func OperatorEqual(a: Uint32, b: Uint32) -> Bool
 native func OperatorLogicOr(a: Bool, b: Bool) -> Bool
 native func OperatorLogicAnd(a: Bool, b: Bool) -> Bool
@@ -20,6 +28,7 @@ native func OperatorLogicNot(a: Bool) -> Bool
 native func AbsF(a: Float) -> Float
 native func FloatToStringPrec(value: Float, precision: Int32) -> String
 native func FTLog(value: script_ref<String>)
+native func StrLen(str: String) -> Int32
 
 // --- value types (game) -------------------------------------------------------------------------------------
 public native struct Vector4 {
@@ -49,6 +58,26 @@ public native struct Quaternion {
 
 public native struct EntityID {}
 public native struct TweakDBID {}
+
+public abstract native class TDBID {
+    public static native func Create(str: String) -> TweakDBID
+}
+
+public native struct WorldPosition {
+    public static native func SetVector4(self: script_ref<WorldPosition>, vector: Vector4)
+}
+
+// AI (spike S3 dump: AIMoveToCommand properties, AIHumanComponent.SendCommand/CancelCommand)
+public native struct AIPositionSpec {
+    public static native func SetWorldPosition(self: script_ref<AIPositionSpec>, worldPosition: WorldPosition)
+}
+
+enum moveMovementType {
+    Walk = 0,
+    Run = 1,
+    Sprint = 2,
+    Strafe = 3
+}
 public native struct ResRef {}
 
 public native struct EngineTime {
@@ -68,8 +97,56 @@ public native class Entity extends IScriptable {
     public final native func GetWorldForward() -> Vector4
 }
 
-public native class GameObject extends Entity {}
-public native class PlayerPuppet extends GameObject {}
+public abstract native class AICommand extends IScriptable {}
+public abstract native class AIMoveCommand extends AICommand {}
+
+public native class AIMoveToCommand extends AIMoveCommand {
+    public native let movementTarget: AIPositionSpec;
+    public native let rotateEntityTowardsFacingTarget: Bool;
+    public native let facingTarget: AIPositionSpec;
+    public native let movementType: moveMovementType;
+    public native let ignoreNavigation: Bool;
+    public native let useStart: Bool;
+    public native let useStop: Bool;
+    public native let desiredDistanceFromTarget: Float;
+    public native let finishWhenDestinationReached: Bool;
+}
+
+public native class AIHumanComponent extends IScriptable {
+    public final native func SendCommand(cmd: ref<AICommand>) -> Bool
+    public final native func CancelCommand(cmd: ref<AICommand>) -> Bool
+}
+
+public native class AttitudeAgent extends IScriptable {
+    public final native func SetAttitudeGroup(attitudeGroup: CName)
+}
+
+public native class TimeDilatable extends Entity {
+    public final native func SetIndividualTimeDilation(reason: CName, dilation: Float, opt duration: Float, opt easeInCurve: CName, opt easeOutCurve: CName, opt ignoreGlobalDilation: Bool, opt useRealTime: Bool)
+    public final native func UnsetIndividualTimeDilation(opt easeOutCurve: CName)
+}
+
+public native class GameObject extends TimeDilatable {
+    public final native func GetAttitudeAgent() -> ref<AttitudeAgent>
+}
+
+public native class gamePuppet extends GameObject {
+    public final native func GetResolvedGenderName() -> CName
+}
+
+public class ScriptedPuppet extends gamePuppet {
+    public final func GetAIControllerComponent() -> ref<AIHumanComponent> {
+        return null;
+    }
+}
+
+public class PlayerPuppet extends ScriptedPuppet {}
+
+public native class TimeSystem extends IScriptable {
+    public final native func SetTimeDilation(reason: CName, dilation: Float, opt duration: Float, opt easeInCurve: CName, opt easeOutCurve: CName, opt listener: ref<IScriptable>)
+    public final native func UnsetTimeDilation(reason: CName, opt easeOutCurve: CName)
+    public final native func SetIgnoreTimeDilationOnLocalPlayerZero(ignore: Bool)
+}
 
 public native class TeleportationFacility extends IScriptable {
     public final native func Teleport(objectToTeleport: ref<GameObject>, position: Vector4, rotation: EulerAngles)
@@ -78,6 +155,7 @@ public native class TeleportationFacility extends IScriptable {
 public native struct GameInstance {
     public static native func GetTeleportationFacility(self: GameInstance) -> ref<TeleportationFacility>
     public static native func GetSimTime(self: GameInstance) -> EngineTime
+    public static native func GetTimeSystem(self: GameInstance) -> ref<TimeSystem>
 }
 
 public func GetPlayer(game: GameInstance) -> ref<PlayerPuppet> {

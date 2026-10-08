@@ -25,8 +25,8 @@ public:
     void OnRemotePlayerLeft(PeerId aPeer) override;
     void DriveRemotePlayer(PeerId aPeer, const RemotePose& aPose) override;
     void OnStatus(const std::string& aText) override;
-    // Stored for the dev panel; applying dilation in the game waits for spike S8 (the panel can try it).
-    void ApplyTimeRates(const TimeRates& aRates) override { m_timeRates = aRates; }
+    // Passed to the bridge every frame, which applies them to the game's time dilation (spikes S8, S8b).
+    void ApplyTimeRates(const TimeRates& aRates) override;
     [[nodiscard]] const TimeRates& LastTimeRates() const { return m_timeRates; }
 
     // Removes every puppet (leaving a session, or the session ending).
@@ -43,5 +43,6 @@ private:
     std::string m_lastStatus;
     TimeRates m_timeRates;
     bool m_warnedCapture = false;
+    bool m_localFemale = false; // body gender reported by the bridge in the last capture
 };
 } // namespace coop::plugin

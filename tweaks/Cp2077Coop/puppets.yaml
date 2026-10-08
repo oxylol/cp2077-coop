@@ -1,7 +1,11 @@
 # Remote-player puppet record (TweakXL). See docs/01-architecture.md §4.
 #
-# M0a placeholder: a generic humanoid NPC that is known to spawn through Codeware's DynamicEntitySystem.
-# Spike S1 picks the real base (a third-person player body that can take a character-customization
-# state) and adds the attitude group, hit capsules and interactions; only $base should need changing.
+# The default puppet body for now: a plain NPC, because it walks, runs and sprints with real animations under AI
+# move commands. The game's V-lookalike records look like V but only slide (spike round C), so they are opt-in
+# through coop.ini:
+#
+#   [puppet]
+#   recordMale=Character.TPP_Player_Cutscene_Male
+#   recordFemale=Character.TPP_Player_Cutscene_Female
 Cp2077Coop.Character.RemotePlayer:
   $base: Character.spr_animals_bouncer1_ranged1_omaha_mb

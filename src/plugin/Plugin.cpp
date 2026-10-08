@@ -62,6 +62,28 @@ int ParseDevInstance()
     return static_cast<int>(std::wcstol(flag + std::wcslen(L"-coopInstance="), nullptr, 10));
 }
 
+// Holds an exclusive lock file for this process's lifetime. Fails while another running game holds it.
+bool TryLockFile(const std::filesystem::path& aFile)
+{
+    const HANDLE handle = CreateFileW(aFile.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                                      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+    return handle != INVALID_HANDLE_VALUE; // deliberately never closed: Windows releases it when the game exits
+}
+
+// Several games started from the same folder (two-instance testing on one PC): the first one is the normal
+// instance, later ones become dev instances 2, 3, ... on their own, so each gets its own player name and id.
+int DetectInstance(const std::filesystem::path& aPluginDir)
+{
+    if (TryLockFile(aPluginDir / "instance.lock"))
+        return 0;
+    for (int instance = 2; instance <= 8; ++instance)
+    {
+        if (TryLockFile(aPluginDir / ("instance-" + std::to_string(instance) + ".lock")))
+            return instance;
+    }
+    return 0;
+}
+
 // A random id per installation (and per dev instance), kept next to the plugin.
 Uuid LoadOrCreateClientId(const std::filesystem::path& aFile)
 {
@@ -124,6 +146,8 @@ void Initialize(RED4ext::v1::PluginHandle aHandle, const RED4ext::v1::Sdk* aSdk)
     std::error_code error;
     env.exeSize = static_cast<uint64_t>(std::filesystem::file_size(env.gameExe, error));
     env.devInstance = ParseDevInstance();
+    if (env.devInstance == 0)
+        env.devInstance = DetectInstance(env.pluginDir);
 
     env.settings.Load(env.pluginDir / "coop.ini");
     Log::SetMinLevel(env.settings.GetBool("dev.verbose", false) ? LogLevel::Debug : LogLevel::Info);

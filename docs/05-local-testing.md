@@ -38,7 +38,7 @@ What the plugin does in instance N:
 
 ### Store notes
 
-- **Steam (your copy):** depends on whether Steam lets one account run the same game twice at once. If it refuses, we use §3. Test: start the game from Steam, then run `Cyberpunk2077.exe` directly from `bin\x64` and note exactly what happens (nothing, an error dialog, a Steam message, or a second window).
+- **Steam (your copy): works** (spike S13, October 2026): starting the game a second time just opens a second game. Without `-coopInstance`, the second and later games started from the same folder become dev instances 2, 3, … automatically (own player name and id, through lock files next to the plugin). Saves and settings are still shared: never save manually during a two-game session, and treat its autosaves as throwaway.
 - **GOG:** DRM-free; expected to work.
 - **Epic:** the launcher-issued sign-in may block a direct second launch.
 

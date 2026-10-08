@@ -1,0 +1,71 @@
+Cp2077Coop 0.4.1: walking puppets, slow motion in game, spike rounds A-E
+
+Story co-op for Cyberpunk 2077 2.31 (base game + Phantom Liberty), 2-4
+players, Seamless-Co-op style: the host's save owns the world, everyone
+keeps their own V, no tether. Start with docs/09-development-handoff.md;
+it has the rules, status, architecture map, build and checks, next steps
+and the gotchas we already hit.
+
+What works in the game (tested on 2.31, one PC)
+- RED4ext plugin loads; host/join from the CET dev panel.
+- Fake players (coop-sim) and a second copy of the game can join. The
+  second game started from the same folder becomes dev instance 2
+  (player "V 2", own client id) automatically.
+- Remote players appear as plain NPCs steered by AI move commands: they
+  walk, run and sprint with real animations (0.5 s lead, up to 5
+  re-targets/s, catch-up, respawn when far behind). V-lookalike bodies
+  (Character.TPP_Player_Cutscene_*) look like the local V but slide;
+  opt-in via coop.ini [puppet].
+- Sandevistan/Kerenzikov time fields are applied in the game: global
+  time dilation from the session's world rate, local V exempt while
+  activating, puppets at their own players' rates
+  (SetIndividualTimeDilation with ignoreGlobalDilation), normal time as
+  soon as a session ends. coop.ini [time] applyToGame=false turns it
+  off.
+
+What works headless (coop-sim, tests)
+- Networking: GameNetworkingSockets, lanes, impairment presets, password
+  handshake, version checks, clock sync, 30 Hz state + interpolation,
+  network thread with the game touched only on the main thread.
+- Vehicles: spawn, seats, owner handoff with epochs, late joiners.
+- Time fields: host-validated activations, 150 m proximity groups,
+  identical rates on every machine, eases, late-information correction.
+- 48 tests (xmake run coop-tests); no ASan/UBSan errors.
+
+Spike results (details in docs/08-spike-results.md)
+- S1: the V-lookalike copies the LOCAL V through gameImpostorComponent;
+  only the one matching the local V's body spawns; items can be put on
+  it. S1 vehicles: spawn, per-frame teleport (smooth), NPC as driver or
+  passenger all work.
+- S2: a plain NPC body is attacked once made hostile per agent; the
+  lookalike (no senses or visible object) needs threat injection. Open:
+  a plain-NPC puppet joins fights on its own (S2d).
+- S3: AI move commands animate a plain NPC; teleports don't move spawned
+  NPCs with AI on; player bodies slide.
+- S8: global dilation, V exemption and per-entity rates all confirmed.
+- S13: the game starts twice on Steam; two-game testing works.
+
+Next (docs/09 section 9)
+1. Round E results: direct drive (AI off + per-frame position) vs.
+   follow-with-matched-speed, to cut puppet delay.
+2. Passive puppets; then vehicles in the game (portable side is done).
+3. Combat (M1), per-player appearance, the game's own Sandevistan.
+
+Rules
+- Every player owns the game; no CDPR assets or game files in the repo
+  (keep probe-*.txt RTTI dumps out); follow CDPR's modding guidelines;
+  never bypass DRM; back up saves before co-op testing.
+- Clean room: no code from other CP2077 multiplayer projects.
+  CyberpunkMP's license forbids studying it for a competing product,
+  so it is never read.
+- New engine calls go into the CET dev panel first (pcall, log line
+  before each risky call); only confirmed calls go into CoopBridge.reds.
+
+Build: tools\dev\bootstrap.ps1 once, xmake f --game_dir=<game folder>,
+xmake, xmake run coop-tests. Linux: xmake && xmake run coop-tests.
+Checks without the game: tools/reds-check/check.sh (scripts),
+tools/plugin-check/check.sh (plugin). In-game test steps:
+docs/07-testing-guide.md.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012ZFP34SBZK3augWiBG7J9n

@@ -130,5 +130,6 @@ private:
     std::string m_lastStatus;
     TimeUs m_lastPump = -1;
     TimeUs m_nextAppearance = 0;
+    bool m_timeRatesApplied = false; // the game was given time rates; reset to normal when the session ends
 };
 } // namespace coop

@@ -21,7 +21,8 @@ struct Environment
     std::string gameBuild;           // exe file version, e.g. "3.0.80.51928"
     uint64_t exeSize = 0;
 
-    // Dev instance mode (docs/05-local-testing.md §2): -coopInstance=N on the game's command line.
+    // Dev instance mode (docs/05-local-testing.md §2): -coopInstance=N on the game's command line, or 2, 3, ...
+    // automatically for the second and later games running from the same folder.
     int devInstance = 0;
 
     Uuid clientId{};

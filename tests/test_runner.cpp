@@ -74,6 +74,13 @@ public:
         Check();
         sim.OnStatus(aText);
     }
+    void ApplyTimeRates(const TimeRates& aRates) override
+    {
+        Check();
+        ++timeRateCalls;
+        lastRates = aRates;
+        sim.ApplyTimeRates(aRates);
+    }
 
     sim::SimPlayer sim;
     std::thread::id mainThread;
@@ -81,6 +88,8 @@ public:
     int appearancesReceived = 0;
     int leftEvents = 0;
     uint64_t drives = 0;
+    uint64_t timeRateCalls = 0;
+    TimeRates lastRates;
     std::optional<LocalAppearance> appearanceOverride;
 
 private:
@@ -308,4 +317,39 @@ TEST_CASE("runner: appearance changes are re-sent; leave and rejoin")
     CHECK(client.runner.LastStatus().find("removed from session") != std::string::npos);
     CHECK_EQ(client.game.wrongThreadCalls, 0);
     CHECK_EQ(host.game.wrongThreadCalls, 0);
+}
+
+TEST_CASE("runner: leaving during your own Sandevistan returns the game to normal time")
+{
+    SteadyClock clock;
+    Machine host(clock, "Host", 100.0f);
+    Machine client(clock, "River", 110.0f);
+    const std::vector<Machine*> both{&host, &client};
+
+    std::string error;
+    REQUIRE(host.runner.Host(MakeHostConfig(27194), MakeClientConfig("Host"), error));
+    REQUIRE(client.runner.Join("127.0.0.1:27194", MakeClientConfig("River"), error));
+    REQUIRE(RunUntil(both, [&] { return client.runner.GetStatus().clockSynced && host.runner.GetStatus().hostPlayers == 2; }, 8.0));
+
+    REQUIRE(client.runner.ActivateTimeField(msg::TimeFieldKind::Sandevistan, 0.25f, 10'000'000) != 0);
+    // Both slow down; the client is the one activating.
+    REQUIRE(RunUntil(
+        both,
+        [&] { return client.game.lastRates.activating && client.game.lastRates.worldRate < 0.3f && host.game.lastRates.worldRate < 0.3f; },
+        5.0));
+
+    client.runner.Leave("test leave");
+    REQUIRE(RunUntil(both, [&] { return !client.game.lastRates.activating && client.game.lastRates.worldRate > 0.99f; }, 3.0));
+    CHECK_NEAR(client.game.lastRates.localRate, 1.0f, 1e-6f);
+    // The activation ends with its player; the host's world eases back to normal too.
+    REQUIRE(RunUntil(both, [&] { return host.game.lastRates.worldRate > 0.99f; }, 3.0));
+
+    // Once back to normal, the left session doesn't keep calling the game.
+    const auto calls = client.game.timeRateCalls;
+    RunUntil(both, [] { return false; }, 0.3);
+    CHECK_EQ(client.game.timeRateCalls, calls);
+    CHECK_EQ(client.game.wrongThreadCalls, 0);
+
+    host.runner.Leave("done");
+    RunUntil(both, [] { return false; }, 0.2);
 }

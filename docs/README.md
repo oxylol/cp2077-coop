@@ -13,6 +13,8 @@ Design documents for a 2–4 player story co-op mod for Cyberpunk 2077 (base gam
 | [05-local-testing.md](05-local-testing.md) | Testing with one PC and one game copy: two instances side by side, headless simulated players, network impairment |
 | [06-roadmap.md](06-roadmap.md) | Milestones M0–M5 with exit criteria checkable on one PC, estimates, spike dependencies |
 | [07-testing-guide.md](07-testing-guide.md) | Step by step: putting the project on GitHub, and testing a new build in the game |
+| [08-spike-results.md](08-spike-results.md) | What the in-game experiments (spikes) showed so far and what each result decided |
+| [09-development-handoff.md](09-development-handoff.md) | Start here to continue development: rules, status, architecture map, build and checks, next steps, gotchas |
 
 Status: **deliverables 1–3 done; M0a delivered and running in the game; M0b portable parts delivered** (network thread, vehicle sync); **M1 time fields delivered on the network side** (Sandevistan/Kerenzikov sync). The game-side parts wait for spike results. See the repository README for what is built and verified.
 
@@ -45,7 +47,7 @@ Status: **deliverables 1–3 done; M0a delivered and running in the game; M0b po
 
 ## Next
 
-Run the first spikes from the repository README (S13, S1, S2, S3, S8) and send back the results; they decide the M0b code (puppet body and appearance, animated walking, vehicles, two-instance mode).
+Rounds A–C are done ([08-spike-results.md](08-spike-results.md)): puppets walk (plain NPC body), slow motion is applied in the game, and two games run on one PC. Now: the game side of vehicles, then combat (enemies target puppets through threat injection). In parallel, research on a V body that animates and shows its own player's looks (S3c, S1b/S1c).
 
 ## Where to put this
 

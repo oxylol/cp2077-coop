@@ -61,12 +61,20 @@ Delivered without needing the game:
 | Tests | 39 total: runner threading, freeze survival, vehicles (deterministic in-memory network), stale-epoch rejection, forged-spawn rejection; ThreadSanitizer clean for our code |
 | Dev panel | S1 vehicle probes: spawn a vehicle, move it from outside, seat an NPC, dump vehicle types |
 
+Delivered after spike rounds A and B ([08](08-spike-results.md)), waiting for an in-game check:
+
+| Area | Delivered |
+|---|---|
+| Puppet body | Plain NPC body that animates (the V-lookalikes slide; opt-in in `coop.ini`); the remote player's body gender is reported for later |
+| Puppet movement | AI move commands towards the network position with a short lead, walk/run/sprint by speed, catch-up, respawn when far behind; player-aligned on spawn ([01 §4](01-architecture.md#4-remote-players-as-entities)) |
+| Dev panel | Round C probes (S3b, S1b, S2b, S8b, S1v-b), lineup of V-like bodies, round D probes (S2c, S1c) |
+| Two games on one PC | S13 works on Steam; the second game becomes dev instance 2 on its own (own name and id) |
+
 Still to do (needs spike results):
 
-- Puppet base record and appearance from the character-customization state (S1).
-- Equipment and clothing visuals.
-- Puppet movement: teleporting is ignored for spawned NPCs (seen in the first in-game test), so puppets need AI-move driving or animation-feature driving (S3).
-- Game side of vehicles: register V's summoned car, spawn and drive proxies, mount puppets in seats (S1 vehicle probes).
+- A player body that animates under AI movement (S3c), then each puppet showing its own player's appearance, clothing and weapon (S1b, starting from the bare `No_Impostor` body).
+- Jumps, vaults, climbing and the facing of a standing puppet.
+- Game side of vehicles: register V's car, spawn and drive proxies, mount puppets in seats, seat the local V as a passenger (S1v-b).
 - Dev instance mode for two instances (only if S13 shows Steam allows it).
 - Version pinning self-test.
 
@@ -94,8 +102,9 @@ Still to do (needs spike results):
 | Time fields | Activations relayed to every machine with host validation; proximity groups at 2 Hz (local or global scope); every player's world and personal rate computed identically everywhere; 300 ms crossfades on joining and leaving; per-machine world clock with late-information correction; slowed send rates; puppet animation rates ([01 §8.8](01-architecture.md#88-as-built-m1-game-independent-part)) |
 | Sim tools | `--sandevistan scale,seconds,period`: bots activate on a schedule and really slow down when someone else does |
 | Dev panel | Sandevistan button for your V, live rates, experimental "apply to the game" switch (S8) |
-| Tests | 47 total; time fields: rates on every machine, real slowed movement, proportional overlap, cancel and disconnect, easing in and out of range, late joiners, global scope, refusal of bad activations; world clocks agree exactly |
+| Tests | 48 total; time fields: rates on every machine, real slowed movement, proportional overlap, cancel and disconnect, easing in and out of range, late joiners, global scope, refusal of bad activations; world clocks agree exactly |
 | CI | GitHub Actions: Linux and Windows build and test on every push; Windows uploads the assembled mod |
+| Time fields in the game | Built into the bridge after spikes S8/S8b: global dilation from the session's world rate, V exempt while activating, puppets at their players' own rates, normal time when a session ends (`[time] applyToGame`) |
 
 Still needs S8 in the game: applying dilation and V's exemption properly, the clock follower against the engine's own simulated time, puppet animation rates.
 

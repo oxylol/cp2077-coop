@@ -64,7 +64,9 @@ bool RedGameAdapter::CaptureLocal(LocalSample& aOut)
     aOut.yaw = sample.yaw;
     aOut.pitch = sample.pitch;
     aOut.locomotion = static_cast<uint8_t>(sample.locomotion & 0xFF);
-    aOut.flags = static_cast<uint8_t>(sample.flags & 0xFF);
+    // The body-gender bit travels in the appearance message, not in every state update.
+    m_localFemale = (sample.flags & kFemaleFlag) != 0;
+    aOut.flags = static_cast<uint8_t>(sample.flags & 0x7F);
     return true;
 }
 
@@ -73,8 +75,8 @@ LocalAppearance RedGameAdapter::GetLocalAppearance()
     LocalAppearance appearance;
     LocalSample sample;
     if (CaptureLocal(sample) && sample.valid)
-        appearance.bodyGender = (sample.flags & kFemaleFlag) ? 1 : 0;
-    // Customization state and equipment are filled in once spike S1 identifies the right APIs (M0b).
+        appearance.bodyGender = m_localFemale ? 1 : 0;
+    // Customization state and equipment: spike S1b (puppets copy the local V's look for now).
     return appearance;
 }
 
@@ -129,6 +131,17 @@ void RedGameAdapter::DriveRemotePlayer(PeerId aPeer, const RemotePose& aPose)
 
     auto peer = static_cast<uint32_t>(aPeer);
     Red::CallVirtual(bridge.instance, "DrivePuppet", peer, pose);
+}
+
+void RedGameAdapter::ApplyTimeRates(const TimeRates& aRates)
+{
+    m_timeRates = aRates;
+    if (const auto bridge = Bridge())
+    {
+        float world = aRates.worldRate;
+        bool activating = aRates.activating;
+        Red::CallVirtual(bridge.instance, "ApplyTimeRates", world, activating);
+    }
 }
 
 void RedGameAdapter::OnStatus(const std::string& aText)
