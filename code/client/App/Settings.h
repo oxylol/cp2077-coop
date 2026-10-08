@@ -20,6 +20,8 @@ struct Settings
     String Version{};
     String ip = "127.0.0.1";
     uint16_t port = 11778;
+    // Player name shown to others (--name=<name>). Two games on one PC need different names.
+    String name{};
     Vector<fs::path> mods = {};
     bool enabled = false;
     bool RpcOnly = false;

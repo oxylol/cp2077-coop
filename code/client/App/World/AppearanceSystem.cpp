@@ -178,11 +178,10 @@ bool AppearanceSystem::ApplyAppearance(Red::Handle<Red::game::Object> object)
     }
 
     auto bytes = m_playerCcstate[object.instance->id];
-    if (bytes.size() == 0)
-    {
-        spdlog::info("no bytes for {}", object->id.hash);
-        return false;
-    }
+    // Without a customization state (the remote game couldn't read its own, see Game/CustomizationState.h) the
+    // body is still dressed, with a default head and arms, rather than left invisible.
+    if (bytes.empty())
+        spdlog::warn("[Appearance] no customization state for {} - dressing it with a default head", object->id.hash);
 
     // NOTE: leftover upstream debug code - sets every remote player's display name to
     // "Test" by writing into a hand-mapped field. Verified NOT to be the spawn crash
@@ -235,6 +234,11 @@ bool AppearanceSystem::ApplyAppearance(Red::Handle<Red::game::Object> object)
     //     items.PushBack("Items.MuppetWaHead");
     // }
     // items.PushBack("Items.MuppetArms");
+    if (bytes.empty())
+    {
+        items.PushBack(Red::TweakDBID("Items.MuppetMaHead"));
+        items.PushBack(Red::TweakDBID("Items.MuppetArms"));
+    }
     AddItems(object, items, stateHandle.instance);
 
     // spdlog::info("head groups read:");
@@ -323,7 +327,7 @@ bool AppearanceSystem::ApplyAppearance(Red::Handle<Red::game::Object> object)
     // unholstered_mantis
     // nails
 
-    if (stateHandle)
+    if (stateHandle && !bytes.empty())
     {
         spdlog::info("Scheduling change");
 

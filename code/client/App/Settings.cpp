@@ -38,6 +38,15 @@ void Settings::Load()
                  ipFromArgs ? "from launch args" : "DEFAULT - --ip= was not parsed",
                  portFromArgs ? "from launch args" : "DEFAULT - --port= was not parsed");
 
+    if (const auto name = launchParameters.Get("-name"); name && name->size > 0)
+        settings.name = (*name)[0].c_str();
+    if (settings.name.empty())
+    {
+        // No --name=: tell instances on the same PC apart by their process id.
+        settings.name = fmt::format("V-{}", GetCurrentProcessId() % 1000).c_str();
+    }
+    spdlog::info("Player name: {}", settings.name);
+
     if (const auto mods = launchParameters.Get("-mod"); mods)
     {
         for (const auto& mod : *mods)

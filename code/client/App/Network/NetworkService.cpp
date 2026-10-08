@@ -1,10 +1,12 @@
 #include "NetworkService.h"
 
 #include "App/World/NetworkWorldSystem.h"
+#include "Game/CustomizationState.h"
 #include "Game/Utils.h"
 #include "RED4ext/Scripting/Natives/Generated/Vector4.hpp"
 #include "RED4ext/Scripting/Natives/Generated/game/Object.hpp"
 #include "App/World/AppearanceSystem.h"
+#include "App/Settings.h"
 #include "Game/CharacterCustomizationSystem.h"
 
 NetworkService::NetworkService()
@@ -40,7 +42,7 @@ void NetworkService::OnConnected()
 
     client::AuthenticationRequest request;
     request.set_token("test");
-    request.set_username("testuser");
+    request.set_username(Settings::Get().name.c_str());
     request.set_client_protocol(client::kIdentifier);
     request.set_server_protocol(server::kIdentifier);
 
@@ -105,17 +107,14 @@ void NetworkService::HandleAuthentication(const PacketEvent<server::Authenticati
     request.set_equipment(appSystem->GetPlayerItems(player));
 
 
-    auto ccSystem = Red::GetGameSystem<Red::game::ui::CharacterCustomizationSystem>();
+    // The handle at +0x78 is null during normal play on 2.31 (PR 58); FindLocalCustomizationState also looks for
+    // the state elsewhere and logs where it found it (Game/CustomizationState.h).
+    const auto state = FindLocalCustomizationState();
 
-    // GetCustomizationState() returns (ccSystem + 0x78), which can never be null - the
-    // instance behind it can be, and is during normal gameplay. Serializing a null
-    // instance crashes the game, so check the instance itself.
-    auto stateHandle = GetCustomizationState(ccSystem);
-
-    if (stateHandle && stateHandle->instance)
+    if (state)
     {
         auto writer = CMPWriter();
-        CharacterCustomizationState_Serialize(stateHandle->instance, &writer);
+        CharacterCustomizationState_Serialize(state.instance, &writer);
         spdlog::info("Got bytes: {}", writer.bytes.size());
         request.set_ccstate(writer.bytes);
     }

@@ -2,6 +2,7 @@ module CyberpunkMP.World
 
 import Codeware.*
 import CyberpunkMP.*
+import CyberpunkMP.Plugins.*
 
 public native class NetworkWorldSystem extends IGameSystem {
     public native func Connect() -> Void;
@@ -23,6 +24,8 @@ public native class NetworkWorldSystem extends IGameSystem {
     }
 
     public func OnDisconnected(reason: Uint32) -> Void {
+        CoopSession.Get().OnDisconnected();
+
         // let evt: ref<ConnectedToServer>;
         // evt.m_connected = true;
         // GameInstance.GetUISystem(GetGameInstance()).QueueEvent(evt);

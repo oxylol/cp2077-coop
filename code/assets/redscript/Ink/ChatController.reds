@@ -3,6 +3,7 @@ module CyberpunkMP.Ink
 // import Codeware.UI.*
 import CyberpunkMP.*
 import CyberpunkMP.World.*
+import CyberpunkMP.Plugins.*
 
 public class ChatController extends inkHUDGameController {
     private let m_messagesRef: inkWidgetRef;
@@ -126,7 +127,12 @@ public class ChatController extends inkHUDGameController {
         if NotEquals(textEntered, "") {
             FTLog(s"[ChatController] SendChat \"\(textEntered)\"");
 
-            GameInstance.GetNetworkWorldSystem().GetChatSystem().Send(textEntered);
+            // "/tp", "/host" and the other co-op commands go to the server's co-op plugin.
+            if CoopIsCommand(textEntered) {
+                CoopServer.Command(textEntered);
+            } else {
+                GameInstance.GetNetworkWorldSystem().GetChatSystem().Send(textEntered);
+            }
         };
     }
 

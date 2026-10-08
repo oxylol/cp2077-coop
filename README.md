@@ -1,67 +1,75 @@
-# Cyberpunk Multiplayer
+# Cyberpunk 2077 Seamless Co-op (built on CyberpunkMP)
 
-**CyberpunkMP** is a multiplayer mod for Cyberpunk 2077, created by Tilted 
-Phoques SRL. This mod brings multiplayer functionality to the game, allowing 
-players to synchronize their appearances, equipment, movements, and basic 
-animations seamlessly. Additionally, vehicles and their passengers are fully 
-synchronized, enabling cooperative or competitive experiences involving the 
-game's dynamic vehicular systems.
+Story co-op for Cyberpunk 2077, made as an enhancement of [CyberpunkMP](https://github.com/tiltedphoques/CyberpunkMP)
+by Tilted Phoques SRL. CyberpunkMP shows other players in your game (their look, clothes, movement, cars, chat);
+this fork adds what story co-op needs on top: one player is the **story host** and everyone else's world follows
+theirs, while each of you plays from your own story save.
 
-CyberpunkMP also includes powerful tools for developers. We provide a .NET SDK 
-for creating server-side plugins and support client-side plugins through an 
-exposed Redscript SDK. The mod features a robust Remote Procedure Call (RPC) 
-system, allowing plugins to invoke server-side functions from the client and 
-vice versa. This system is completely automatic, requiring no additional code 
-to handle RPC functionality.
+This repository is a fork with CyberpunkMP's full history (remote `upstream`), so upstream changes can be merged.
+It includes upstream's open pull requests that make CyberpunkMP run on **game patch 2.31** (#56–#60: the RTTI name
+fix without which the game refuses to start, remote-player position fix, spawn crash guards, pinned build).
 
-## Building
+## What the co-op layer does (so far)
 
-### Requirements
-- [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/)
-- [xmake](https://github.com/xmake-io/xmake/releases)
-- [git](https://git-scm.com/downloads)
+| | |
+|---|---|
+| Story host | The first player to connect. If they leave, the longest-connected player takes over; `/makehost` takes it. |
+| Shared world | Every 2 s the host's game time, weather and tracked quest go to the others. Guests' clocks only move **forward** to the host's time of day (going back breaks quest timers); the weather blends to the host's. |
+| Meeting up | `/tp` puts you next to the host, `/tp <name>` next to anyone. |
+| Player names | `--name=<name>` on the game's command line (two games on one PC need different names). |
+| Others' looks | Each game sends its V's character customization; 2.31 moved where it lives, so the client now searches for it and logs what it found (`[Customization]` in `red4ext/logs`). A player whose look can't be read is still shown dressed with a default head instead of invisible. |
 
-### Build
-1. Navigate to the repository using a command prompt.
-2. Check out the correct branch/tag if you're not working against main
-3. Run `git submodule update --init` to pull in vendored dependencies
-4. Run `xmake -y` (add `-v` for verbose output)
+Chat commands (`;` opens the chat): `/help`, `/host`, `/players`, `/tp [name]`, `/sync`, `/makehost`.
 
-### Visual Studio
+Code: server plugin `code/server/scripting/CoopSystem/` (C#), client script `code/assets/redscript/Plugins/Coop.reds`,
+engine calls `code/client/App/World/CoopNative.cpp`, customization lookup `code/client/Game/CustomizationState.cpp`.
 
-If you want visual studio projects execute `xmake project -k vsxmake` and you 
-will find the sln in the newly created `vsxmake` folder.
+## Build (Windows)
 
-In addition, if you want to debug the project directly from with Visual Studio
-you can set the game path `xmake f --game="C:/.../Cyberpunk2077.exe"`. In Visual
-Studio you will then have a project named `Cyberpunk2077`, debug this target in
-`Debug` only, it will not work in other modes.
+Requirements: Visual Studio 2022 (C++ workload; Windows SDK below 10.0.26100), [xmake](https://xmake.io), git,
+.NET 9 SDK and .NET 8 runtime, Node.js with pnpm (the Emote plugin's web widget).
 
-> [!IMPORTANT]
-> On Windows, you'll need to use Windows SDK **below** v10.0.26100.0. An issue
-> is currently breaking the build due to package `protobuf-cpp`.
+```powershell
+git submodule update --init
+xmake f -m debug --game="C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe"
+xmake build Server.Loader      # server + plugins (CoopSystem, EmoteSystem, JobSystem)
+xmake build Cyberpunk2077      # client; links CyberpunkMP.dll into red4ext\plugins\zzzCyberpunkMP
+```
 
-### Additional configuration / troubleshooting
+In debug builds the game loads the scripts, tweaks and archives straight from `code/assets`, so a script change
+needs no rebuild, only a game restart.
 
-- [RED4ext](https://github.com/WopsS/RED4ext/releases)
-- [CyberEngineTweaks](https://github.com/maximegmd/CyberEngineTweaks/releases)
-- [Redscript](https://github.com/jac3km4/redscript/releases/)
-- [ArchiveXL](https://github.com/psiberx/cp2077-archive-xl/releases/)
-- [TweakXL](https://github.com/psiberx/cp2077-tweak-xl/releases/)
-- [Codeware](https://github.com/psiberx/cp2077-codeware/releases/)
-- [Input Loader](https://github.com/jackhumbert/cyberpunk2077-input-loader/releases)
+Game mods required: [RED4ext](https://github.com/WopsS/RED4ext/releases),
+[redscript](https://github.com/jac3km4/redscript/releases), [Codeware](https://github.com/psiberx/cp2077-codeware/releases),
+[ArchiveXL](https://github.com/psiberx/cp2077-archive-xl/releases), [TweakXL](https://github.com/psiberx/cp2077-tweak-xl/releases),
+[Input Loader](https://github.com/jackhumbert/cyberpunk2077-input-loader/releases).
 
-### Docker
+## Test with two games on one PC
 
-To build and run a Docker image of the server 
-1. Follow [build steps 1 to 3](#build)
-2. Build the image with `docker build . -tag cyberpunkmp`
-3. Run it with `docker run -p 11778:11778 cyberpunkmp`
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\coop\start-local.ps1 -Game "<game>\bin\x64\Cyberpunk2077.exe"
+```
 
-#### Paths you might want to bind
-- **Config**, so you can configure the server.  
-  Example argument: `-v $(pwd)/config:/app/config`
-- **Plugins** if you want to add custom ones.  
-  Example argument: `-v $(pwd)/plugins:/app/plugins`
+It starts the server and two games (`--online --ip=127.0.0.1 --port=11778 --name=Host` / `--name=Guest`). In each
+game load a save, then **hold `/`** to connect; the first one is the story host. Then check:
 
-**NOTE:** If you change the port in the config, don't forget to expose it.
+1. Each game shows the other player, placed where they are, with their look (or at least dressed).
+2. The chat says who joined and who the host is; `/players` lists both.
+3. On the guest, the time of day jumps forward to the host's, and the weather follows within a few seconds.
+4. `/tp` on the guest puts you next to the host.
+
+Logs: `<game>\red4ext\logs\CyberpunkMP*.log` and the server window. The two games share the save folder, so never
+save in both at once.
+
+## Roadmap to a shared story
+
+1. **Now:** see each other, shared time and weather, meet up, host's tracked quest visible (`/host`).
+2. **Shared progress:** the host's quest facts and journal state sent to guests, applied when the guest is at the
+   same point; guests joining the host's story from a copy of the host's save.
+3. **Shared encounters:** NPCs and combat owned by the host's game and mirrored on the guests'.
+
+## License
+
+CyberpunkMP's license ([LICENSE.md](LICENSE.md)): modifications stay public under the same terms, credit Tilted
+Phoques SRL, and are distributed only through GitHub or the authors' own site, never on modding platforms. Not
+affiliated with CD PROJEKT RED; every player needs their own copy of the game.

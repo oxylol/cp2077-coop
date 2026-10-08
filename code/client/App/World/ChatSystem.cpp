@@ -1,6 +1,7 @@
 #include "ChatSystem.h"
 
 #include "App/Network/NetworkService.h"
+#include "App/Settings.h"
 #include "App/ChatMessageEvent.h"
 #include <RED4ext/Scripting/Natives/Generated/game/ui/IGameSystemUI.hpp>
 
@@ -44,5 +45,5 @@ void ChatSystem::Send(const Red::CString& aMessage)
 
 RED4ext::CString ChatSystem::GetUsername()
 {
-    return RED4ext::CString("jackhumbert");
+    return RED4ext::CString(Settings::Get().name.c_str());
 }
