@@ -15,6 +15,9 @@ constexpr TimeUs kBurstPingIntervalUs = 100 * kUsPerMs;
 constexpr TimeUs kPingIntervalUs = 1 * kUsPerSecond;
 constexpr int kBurstPings = 8;
 constexpr TimeUs kHeartbeatIntervalUs = 2 * kUsPerSecond;
+constexpr TimeUs kAnimIntervalUs = 66'667;            // animation inputs at up to 15 Hz
+constexpr TimeUs kAnimFullIntervalUs = 2 * kUsPerSecond; // and everything every 2 s
+constexpr size_t kMaxPendingAnimEvents = 64;
 } // namespace
 
 const char* ToString(ClientState aState)
@@ -161,6 +164,7 @@ void ClientSession::Tick()
     {
         UpdateTimeRates(SessionNow());
         SendLocalState(now);
+        SendAnimInputs(now);
         SendVehicleStates(now);
         DriveRemotes();
         DriveVehicles(SessionNow());
@@ -354,6 +358,16 @@ void ClientSession::HandlePacket(const Packet& aPacket)
         break;
     }
 
+    case MsgId::PlayerAnim:
+    {
+        msg::PlayerAnim anim;
+        if (!Decode(data, size, anim) || anim.peer == m_peer || m_remotes.count(anim.peer) == 0)
+            break;
+        ++m_animReceived;
+        m_adapter.ApplyRemoteAnimInputs(anim.peer, anim.inputs, anim.full);
+        break;
+    }
+
     case MsgId::TimeFieldActivate:
     {
         msg::TimeFieldActivate activate;
@@ -445,6 +459,7 @@ void ClientSession::OnJoinAccept(const msg::JoinAccept& aMessage)
 
     m_appearanceSent = false;
     UpdateAppearance(m_adapter.GetLocalAppearance());
+    m_nextAnimFull = 0; // everyone gets this V's full animation state right away
 
     COOP_LOG_INFO("client: joined as peer %u", static_cast<unsigned>(m_peer));
     m_adapter.OnStatus("joined the session as player " + std::to_string(m_peer));
@@ -464,6 +479,64 @@ void ClientSession::UpdateAppearance(const LocalAppearance& aAppearance)
     {
         m_sentAppearance = aAppearance;
         m_appearanceSent = true;
+    }
+}
+
+void ClientSession::PublishAnimInputs(const std::vector<AnimInput>& aInputs)
+{
+    for (const auto& input : aInputs)
+    {
+        if (input.kind == AnimInputKind::Event)
+        {
+            if (m_animEvents.size() < kMaxPendingAnimEvents)
+                m_animEvents.push_back(input);
+            continue;
+        }
+        const auto key = input.Key();
+        auto it = m_animCurrent.find(key);
+        if (it == m_animCurrent.end() || !(it->second == input))
+        {
+            m_animCurrent[key] = input;
+            m_animDirty.insert(key);
+        }
+    }
+}
+
+void ClientSession::SendAnimInputs(TimeUs aLocalNow)
+{
+    const bool full = aLocalNow >= m_nextAnimFull && !m_animCurrent.empty();
+    if (!full && (aLocalNow < m_nextAnimSend || (m_animDirty.empty() && m_animEvents.empty())))
+        return;
+
+    std::vector<AnimInput> inputs;
+    if (full)
+    {
+        for (const auto& [key, input] : m_animCurrent)
+            inputs.push_back(input);
+        m_nextAnimFull = aLocalNow + kAnimFullIntervalUs;
+    }
+    else
+    {
+        for (const auto key : m_animDirty)
+            inputs.push_back(m_animCurrent.at(key));
+    }
+    inputs.insert(inputs.end(), m_animEvents.begin(), m_animEvents.end());
+    m_animDirty.clear();
+    m_animEvents.clear();
+    m_nextAnimSend = aLocalNow + kAnimIntervalUs;
+
+    // One message holds up to kMaxAnimInputsPerMessage inputs; a bigger set goes out in several.
+    for (size_t first = 0; first < inputs.size(); first += kMaxAnimInputsPerMessage)
+    {
+        msg::PlayerAnim message;
+        message.peer = m_peer;
+        message.sessionTimeUs = SessionNow();
+        message.full = full;
+        const auto last = std::min(inputs.size(), first + static_cast<size_t>(kMaxAnimInputsPerMessage));
+        message.inputs.assign(inputs.begin() + static_cast<std::ptrdiff_t>(first),
+                              inputs.begin() + static_cast<std::ptrdiff_t>(last));
+        if (SendMessage(message))
+            ++m_animSent;
     }
 }
 

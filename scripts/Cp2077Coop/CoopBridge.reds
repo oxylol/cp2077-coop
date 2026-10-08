@@ -1,23 +1,32 @@
 // Script side of the co-op plugin: reports the local V to the plugin and shows remote players as puppets.
 // The plugin calls these methods by name (src/plugin/RedGameAdapter.cpp), so keep names and signatures in sync.
 //
-// Only engine calls that were confirmed in game (spikes S1 and S3, docs/04-feasibility-and-risks.md §3) are
-// used here, because a single unknown call would stop every script from compiling. Experiments stay in the CET
-// dev panel (cet/coop-dev) until they are confirmed.
+// Only engine calls that were confirmed in game (spikes S1, S3 and S8, docs/04-feasibility-and-risks.md §3) are
+// used here, because a single unknown call would stop every script from compiling. Calls that are not confirmed
+// yet go through the plugin (CoopSystem.SetPuppetAI), which logs an error instead. Experiments stay in the CET dev
+// panel (cet/coop-dev) until they are confirmed.
 //
-// Puppets (M0b):
-// * Body: for now a plain NPC body, because it animates under AI move commands. The game's third-person V records
-//   (Character.TPP_Player_Cutscene_Male/Female) look like V but only slide (round C lineup); they also copy the
-//   LOCAL V's look and weapon, and only the one matching the local V's body spawns. They stay selectable in
-//   coop.ini, with the record picked by the local V's body. Making a V body animate (S3c) and giving each puppet
-//   its own player's looks (S1b) are open.
+// Puppets ("direct drive", docs/01-architecture.md §4):
+// * Body: the game's third-person V (Character.TPP_Player_Cutscene_Male/Female), the record matching the LOCAL
+//   V's body, because only that one spawns (round C). It uses V's own animation setup, so the animation inputs
+//   the plugin captures from the remote player's V can be applied to it unchanged (src/plugin/AnimCapture.cpp).
+//   It still copies the local V's look and weapon (impostor component, S1c); per-player looks are open.
+// * Movement: no AI routing. The body is placed every frame at the network position, facing the network yaw (the
+//   session interpolates the pose, ~0.1 s behind), through the plugin (CoopSystem.PlaceEntity). Round F showed the
+//   teleportation facility doesn't move NPCs, AI on or off, so placement methods are tried in turn: Codeware's
+//   SetWorldTransform with the AI off, then an AI teleport command with the AI on, then the teleportation facility
+//   (coop.ini [puppet] place). Speed,
+//   direction, turning and so on reach its animation graph as inputs: captured from the remote V, plus motion
+//   values the plugin works out from the pose (core/AnimMotion.hpp, coop.ini [anim]).
+// * Fallback: placing an NPC with its AI on doesn't move it (S3), and placing one with its AI off is new. If the
+//   body stays put while the placements move away from it, that puppet goes back to AI walking (AI move commands
+//   towards the network position, the M0b behaviour) and the dev panel says why; it tries direct drive again a
+//   minute later, or with its next body, and stays on AI walking after the second fallback. coop.ini [puppet]
+//   drive=ai uses AI walking from the start.
 // * Time fields (Sandevistan, Kerenzikov): the session's world rate becomes the game's global time dilation, the
 //   local V is exempt while activating, and a puppet whose player moves at a different rate than the local world
 //   (e.g. the remote activator) gets its own rate that ignores the global one (spikes S8, S8b). coop.ini
 //   [time] applyToGame=false turns this off.
-// * Movement: AI move commands towards the network position (S3: normal walk/run animation). Teleports don't
-//   move spawned NPCs, so a puppet that falls too far behind (fast travel, a jump off a roof) is respawned at
-//   the right place instead.
 
 public class CoopPuppetEntry {
     public let peer: Uint32;
@@ -26,6 +35,23 @@ public class CoopPuppetEntry {
     public let remoteFemale: Bool; // the remote player's own body, for when puppets can show it (S1b)
     public let spawnTime: Float;
     public let configured: Bool;
+    // Direct drive: AI off, placed every frame. False = AI walking (coop.ini, or the fallback below).
+    public let direct: Bool;
+    public let method: Int32;        // placement method (CoopSystem.PlaceEntity: 1 teleport, 2 transform, 3 AI teleport)
+    public let methodNote: String;   // why the previous method was given up
+    public let lastPlaceTime: Float;
+    public let aiOff: Bool;          // the plugin switched the AI off
+    public let aiNote: String;       // what happened when switching it
+    public let placements: Int32;
+    public let placedAt: Vector4;    // where the last placement put it
+    public let placedYaw: Float;
+    public let stuckSince: Float;    // when the body stopped following the placements; -1 while it follows
+    public let lastActual: Vector4;  // where the body was the frame before
+    public let aiTries: Int32;       // attempts to switch the AI off (the controller may not be ready at once)
+    public let aiTryTime: Float;
+    public let fallback: String;     // why this puppet last went back to AI walking
+    public let fallbacks: Int32;     // after two, the puppet stays on AI walking
+    public let fallbackTime: Float;
     // Walking (AI move commands).
     public let command: ref<AIMoveToCommand>;
     public let commandTarget: Vector4;
@@ -58,6 +84,8 @@ public class CoopBridge extends ScriptableSystem {
     private let m_recordMaleName: String;
     private let m_recordFemaleName: String;
     private let m_localFemale: Bool;
+    private let m_driveDirect: Bool;
+    private let m_placeMethod: Int32; // coop.ini [puppet] place: 0 = auto (transform, then AI teleport)
     // Time fields.
     private let m_applyTime: Bool;
     private let m_timeApplied: Bool;   // a global time dilation from the session is in effect
@@ -98,16 +126,15 @@ public class CoopBridge extends ScriptableSystem {
     }
 
     // Records the puppets are spawned from: recordMale while the local V has a male body, recordFemale while it has a
-    // female one. coop.ini can override them ([puppet] recordMale=..., recordFemale=...), e.g. to compare bodies
-    // without rebuilding.
+    // female one, and how they are moved. coop.ini can override them ([puppet] recordMale=..., recordFemale=...,
+    // drive=direct|ai), e.g. to compare bodies without rebuilding.
     private func LoadPuppetRecords(coop: ref<CoopSystem>) -> Void {
-        // Default: a plain NPC body (r6/tweaks/Cp2077Coop/puppets.yaml). It walks, runs and sprints with real
-        // animations under AI move commands, while the V-lookalikes only slide (round C lineup). To see the lookalike
-        // instead: [puppet] recordMale=Character.TPP_Player_Cutscene_Male (recordFemale=..._Female) in coop.ini.
-        this.m_recordMale = t"Cp2077Coop.Character.RemotePlayer";
-        this.m_recordMaleName = "Cp2077Coop.Character.RemotePlayer";
-        this.m_recordFemale = t"Cp2077Coop.Character.RemotePlayer";
-        this.m_recordFemaleName = "Cp2077Coop.Character.RemotePlayer";
+        // Default: the game's third-person V, which uses V's animation setup (the inputs captured from the remote
+        // V fit it). The plain NPC body of M0b is Cp2077Coop.Character.RemotePlayer (r6/tweaks/Cp2077Coop).
+        this.m_recordMale = t"Character.TPP_Player_Cutscene_Male";
+        this.m_recordMaleName = "Character.TPP_Player_Cutscene_Male";
+        this.m_recordFemale = t"Character.TPP_Player_Cutscene_Female";
+        this.m_recordFemaleName = "Character.TPP_Player_Cutscene_Female";
         let male = coop.GetSetting("puppet.recordMale");
         if StrLen(male) > 0 {
             this.m_recordMale = TDBID.Create(male);
@@ -118,6 +145,9 @@ public class CoopBridge extends ScriptableSystem {
             this.m_recordFemale = TDBID.Create(female);
             this.m_recordFemaleName = female;
         }
+        let drive = coop.GetSetting("puppet.drive");
+        this.m_driveDirect = !Equals(drive, "ai") && !Equals(drive, "AI");
+        this.m_placeMethod = coop.GetPlacementMethod();
     }
 
     // --- called by the plugin ------------------------------------------------------------------------
@@ -177,27 +207,57 @@ public class CoopBridge extends ScriptableSystem {
             }
             return;
         }
+        let position = entity.GetWorldPosition();
         if !entry.found {
             entry.found = true;
             entry.foundTime = now;
+            entry.actual = position;
         }
-        entry.actual = entity.GetWorldPosition();
+        entry.lastActual = entry.actual;
+        entry.actual = position;
 
-        let puppet = entity as ScriptedPuppet;
-        if !IsDefined(puppet) {
+        let object = entity as GameObject;
+        if !IsDefined(object) {
             entry.noAI = true;
             return;
         }
         if !entry.configured {
             // Friendly to the local V: no hostility when bumped, and V can share a car with it (S1 vehicles).
-            puppet.GetAttitudeAgent().SetAttitudeGroup(n"player");
+            object.GetAttitudeAgent().SetAttitudeGroup(n"player");
             entry.configured = true;
         }
-        this.ApplyPuppetRate(entry, puppet);
+        // Individual time dilation lives on puppets (TimeDilatable), not on every GameObject.
+        let puppet = entity as ScriptedPuppet;
+        if IsDefined(puppet) {
+            this.ApplyPuppetRate(entry, puppet);
+        }
 
-        // Too far to walk: respawn at the target. A body that has just appeared can report a wrong position for a
-        // moment (round C: puppets were respawned in a loop the moment they appeared), so this only applies once the
-        // body has been there for 3 s, and at most every 10 s.
+        // A puppet that fell back to AI walking tries direct drive again after a minute (the cause may have been
+        // passing, e.g. a load), at most twice per puppet.
+        if !entry.direct && this.m_driveDirect && entry.fallbacks > 0 && entry.fallbacks < 2 && now - entry.fallbackTime > 60.0 {
+            this.RetryDirect(entry);
+        }
+
+        if entry.direct {
+            if this.NeedsAI(entry.method) {
+                if entry.aiOff {
+                    this.SwitchAI(entry, entity, true);
+                }
+            } else {
+                // Switch the AI off; retried every 0.5 s for 3 s in case the controller isn't ready at first.
+                if !entry.aiOff && entry.aiTries < 6 && now - entry.aiTryTime > 0.5 {
+                    entry.aiTries += 1;
+                    entry.aiTryTime = now;
+                    this.SwitchAI(entry, entity, false);
+                }
+            }
+            this.Place(entry, entity, pose, female, now);
+            return;
+        }
+
+        // AI walking. Too far to walk: respawn at the target. A body that has just appeared can report a wrong
+        // position for a moment (round C: puppets were respawned in a loop the moment they appeared), so this only
+        // applies once the body has been there for 3 s, and at most every 10 s.
         let offBy = Vector4.Distance(entry.actual, pose.position);
         if offBy > 8.0 {
             if entry.farSince < 0.0 {
@@ -213,6 +273,10 @@ public class CoopBridge extends ScriptableSystem {
             return;
         }
 
+        if !IsDefined(puppet) {
+            entry.noAI = true;
+            return;
+        }
         this.Walk(entry, puppet, pose, offBy, now);
     }
 
@@ -332,7 +396,13 @@ public class CoopBridge extends ScriptableSystem {
     // got there.
     public func GetPuppetDebug() -> String {
         let record = this.LocalFemale() ? this.m_recordFemaleName : this.m_recordMaleName;
-        let text = s"body: \(record)\n";
+        let text = s"body: \(record) (picked by your V's body)\n";
+        if this.m_driveDirect {
+            let place = GameInstance.GetCoopSystem().GetPlacementMethodName(this.m_placeMethod);
+            text = text + s"movement: direct, placed every frame (method \(place); falls back to AI walking if the body doesn't follow)\n";
+        } else {
+            text = text + "movement: AI walking (coop.ini [puppet] drive=ai)\n";
+        }
         if !this.m_applyTime {
             text = text + "time fields: not applied to the game (coop.ini [time] applyToGame)\n";
         } else {
@@ -358,16 +428,43 @@ public class CoopBridge extends ScriptableSystem {
             } else {
                 let offBy = Vector4.Distance(entry.target, entry.actual);
                 line = line + s"target \(this.FormatXY(entry.target)), actual \(this.FormatXY(entry.actual)), ";
-                line = line + s"off by \(FloatToStringPrec(offBy, 1)) m, speed \(FloatToStringPrec(entry.speed, 1)) m/s, ";
-                line = line + s"move commands \(entry.commands), respawns \(entry.respawns)";
+                line = line + s"off by \(FloatToStringPrec(offBy, 2)) m, speed \(FloatToStringPrec(entry.speed, 1)) m/s, ";
+                if entry.direct {
+                    let method = GameInstance.GetCoopSystem().GetPlacementMethodName(entry.method);
+                    line = line + s"DIRECT (\(method)): placed \(entry.placements) times";
+                    if StrLen(entry.methodNote) > 0 {
+                        line = line + s" (\(entry.methodNote))";
+                    }
+                    if this.NeedsAI(entry.method) {
+                        line = line + ", AI on (this method needs it)";
+                    } else {
+                        if entry.aiOff {
+                            line = line + ", AI off";
+                        } else {
+                            line = line + s", AI NOT off after \(entry.aiTries) tries (\(entry.aiNote))";
+                        }
+                    }
+                    if entry.fallbacks > 0 {
+                        line = line + s", earlier fallbacks \(entry.fallbacks)";
+                    }
+                    if entry.stuckSince >= 0.0 {
+                        line = line + s", NOT FOLLOWING for \(FloatToStringPrec(now - entry.stuckSince, 1)) s";
+                    }
+                } else {
+                    line = line + s"AI WALKING: move commands \(entry.commands)";
+                    if StrLen(entry.fallback) > 0 {
+                        line = line + s" (fallback \(entry.fallbacks): \(entry.fallback))";
+                    }
+                }
+                line = line + s", respawns \(entry.respawns)";
                 if entry.appliedRate > 0.0 {
                     line = line + s", own time rate x\(FloatToStringPrec(entry.appliedRate, 2))";
                 }
                 if StrLen(entry.lastRespawn) > 0 {
-                    line = line + s" (last: \(entry.lastRespawn))";
+                    line = line + s" (last respawn: \(entry.lastRespawn))";
                 }
                 if entry.noAI {
-                    line = line + ", NO AI (can't walk)";
+                    line = line + ", NOT A GAME OBJECT OR NO AI (can't be moved)";
                 }
             }
             text = text + line + "\n";
@@ -377,6 +474,15 @@ public class CoopBridge extends ScriptableSystem {
 
     private func FormatXY(v: Vector4) -> String {
         return s"(\(FloatToStringPrec(v.X, 1)), \(FloatToStringPrec(v.Y, 1)))";
+    }
+
+    // Whether a puppet is placed every frame (the plugin feeds motion inputs only to those).
+    public func IsPuppetDirect(peer: Uint32) -> Bool {
+        let entry = this.FindPuppet(peer);
+        if !IsDefined(entry) {
+            return false;
+        }
+        return entry.direct;
     }
 
     public func GetPuppetEntity(peer: Uint32) -> ref<Entity> {
@@ -466,7 +572,10 @@ public class CoopBridge extends ScriptableSystem {
         entry.peer = peer;
         entry.female = female;
         entry.farSince = -1.0;
+        entry.stuckSince = -1.0;
         entry.rate = 1.0;
+        entry.direct = this.m_driveDirect;
+        entry.method = this.FirstMethod();
         entry.entityID = this.CreatePuppetEntity(pose, female);
         entry.spawnTime = this.Now();
         ArrayPush(this.m_puppets, entry);
@@ -483,7 +592,20 @@ public class CoopBridge extends ScriptableSystem {
         entry.found = false;
         entry.noAI = false;
         entry.appliedRate = 0.0;
+        entry.aiOff = false;
+        entry.aiNote = "";
+        entry.aiTries = 0;
+        entry.aiTryTime = 0.0;
+        entry.placements = 0;
+        entry.stuckSince = -1.0;
         entry.respawns += 1;
+        // A new body gets direct drive again, unless it already failed twice for this player.
+        entry.lastPlaceTime = 0.0;
+        if this.m_driveDirect && entry.fallbacks < 2 {
+            entry.direct = true;
+            entry.method = this.FirstMethod();
+            entry.methodNote = "";
+        }
     }
 
     private func CreatePuppetEntity(pose: CoopPuppetPose, female: Bool) -> EntityID {
@@ -500,6 +622,176 @@ public class CoopBridge extends ScriptableSystem {
         spec.tags = [n"Cp2077Coop.Puppet"];
         return GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
     }
+
+    // --- direct drive ----------------------------------------------------------------------------------
+
+    // Puts the body at the network pose. Called every frame; the engine is only called when the pose moved or
+    // turned, or the body drifted off it.
+    //
+    // A body that doesn't take placements stays where it is while the placements move away from it. That is what
+    // counts as stuck: more than 1 m (horizontally) from the last placement while the body itself didn't move since
+    // the frame before. A body that follows a frame or two late, or drops a little onto the ground, keeps moving and
+    // never counts. Stuck for 2 s: the puppet falls back to AI walking, or, if it has no AI to walk with, is
+    // respawned at the right place.
+    private func Place(entry: ref<CoopPuppetEntry>, entity: ref<Entity>, pose: CoopPuppetPose, female: Bool, now: Float) -> Void {
+        if entry.placements > 0 {
+            let lagSq = this.FlatDistanceSquared(entry.actual, entry.placedAt);
+            let stepSq = this.FlatDistanceSquared(entry.actual, entry.lastActual);
+            if lagSq > 1.0 && stepSq < 0.0025 {
+                if entry.stuckSince < 0.0 {
+                    entry.stuckSince = now;
+                }
+            } else {
+                entry.stuckSince = -1.0;
+            }
+            let settled = now - entry.foundTime > 3.0;
+            if settled && entry.stuckSince >= 0.0 && now - entry.stuckSince > 2.0 {
+                let behind = FloatToStringPrec(Vector4.Distance(entry.actual, entry.placedAt), 1);
+                this.PlacementFailed(entry, entity, pose, female, s"the body didn't follow (\(behind) m behind)", now);
+                return;
+            }
+        }
+
+        let moved = Vector4.Distance(pose.position, entry.placedAt);
+        let drift = Vector4.Distance(entry.actual, pose.position);
+        let turned = AbsF(this.AngleDelta(entry.placedYaw, pose.yaw));
+        // AI teleports go through the AI's command queue, so at most ten a second.
+        let due = !this.NeedsAI(entry.method) || now - entry.lastPlaceTime > 0.1;
+        if due && (entry.placements == 0 || moved > 0.01 || turned > 0.5 || drift > 0.1) {
+            let coop = GameInstance.GetCoopSystem();
+            if !coop.PlaceEntity(entity, pose.position, pose.yaw, entry.method) {
+                this.PlacementFailed(entry, entity, pose, female, coop.GetPlacementError(), now);
+                return;
+            }
+            entry.placedAt = pose.position;
+            entry.placedYaw = pose.yaw;
+            entry.lastPlaceTime = now;
+            entry.placements += 1;
+        }
+    }
+
+    // The current placement method doesn't work for this body: the next one, or AI walking after the last.
+    private func PlacementFailed(entry: ref<CoopPuppetEntry>, entity: ref<Entity>, pose: CoopPuppetPose, female: Bool, reason: String, now: Float) -> Void {
+        let coop = GameInstance.GetCoopSystem();
+        let next = this.NextMethod(entry.method);
+        if next != 0 {
+            let from = coop.GetPlacementMethodName(entry.method);
+            let to = coop.GetPlacementMethodName(next);
+            entry.methodNote = s"\(from) failed: \(reason)";
+            entry.method = next;
+            entry.placements = 0;
+            entry.stuckSince = -1.0;
+            entry.aiTries = 0;
+            entry.aiTryTime = 0.0;
+            this.ShowStatus(s"player \(entry.peer)'s puppet: \(from) placement failed (\(reason)), trying \(to)");
+            return;
+        }
+        if this.CanWalk(entity) {
+            this.FallBackToAI(entry, entity, reason, now);
+            return;
+        }
+        if now - entry.spawnTime > 10.0 {
+            entry.lastRespawn = s"\(reason) and can't walk";
+            this.Respawn(entry, pose, female);
+        }
+    }
+
+    private func FirstMethod() -> Int32 {
+        if this.m_placeMethod != 0 {
+            return this.m_placeMethod;
+        }
+        return 2; // transform
+    }
+
+    // Auto: transform, then AI teleport, then the teleportation facility (which only has a chance with extra
+    // components switched off, coop.ini [puppet] switchOff). A method set in coop.ini has no next one.
+    private func NextMethod(method: Int32) -> Int32 {
+        if this.m_placeMethod != 0 {
+            return 0;
+        }
+        if method == 2 {
+            return 3;
+        }
+        if method == 3 {
+            return 1;
+        }
+        return 0;
+    }
+
+    private func NeedsAI(method: Int32) -> Bool {
+        return method == 3;
+    }
+
+    private func CanWalk(entity: ref<Entity>) -> Bool {
+        let puppet = entity as ScriptedPuppet;
+        if !IsDefined(puppet) {
+            return false;
+        }
+        return IsDefined(puppet.GetAIControllerComponent());
+    }
+
+    private func FlatDistanceSquared(a: Vector4, b: Vector4) -> Float {
+        let dx = a.X - b.X;
+        let dy = a.Y - b.Y;
+        return dx * dx + dy * dy;
+    }
+
+    private func SwitchAI(entry: ref<CoopPuppetEntry>, entity: ref<Entity>, on: Bool) -> Void {
+        let coop = GameInstance.GetCoopSystem();
+        if !IsDefined(coop) {
+            entry.aiNote = "plugin not reachable";
+            return;
+        }
+        if coop.SetPuppetAI(entity, on) {
+            entry.aiOff = !on;
+            entry.aiNote = on ? "switched on" : "switched off";
+        } else {
+            entry.aiNote = "the plugin couldn't switch it, see the dev panel's animation status";
+        }
+    }
+
+    private func FallBackToAI(entry: ref<CoopPuppetEntry>, entity: ref<Entity>, reason: String, now: Float) -> Void {
+        entry.direct = false;
+        entry.fallback = reason;
+        entry.fallbacks += 1;
+        entry.fallbackTime = now;
+        entry.command = null;
+        entry.farSince = -1.0;
+        entry.stuckSince = -1.0;
+        if entry.aiOff {
+            this.SwitchAI(entry, entity, true);
+        }
+        let retry = entry.fallbacks < 2 ? " (tries direct drive again in 60 s)" : " (for the rest of the session)";
+        this.ShowStatus(s"player \(entry.peer)'s puppet: back to AI walking, \(reason)\(retry)");
+    }
+
+    private func RetryDirect(entry: ref<CoopPuppetEntry>) -> Void {
+        entry.direct = true;
+        entry.method = this.FirstMethod();
+        entry.methodNote = "";
+        entry.command = null;
+        entry.aiTries = 0;
+        entry.aiTryTime = 0.0;
+        entry.placements = 0;
+        entry.stuckSince = -1.0;
+    }
+
+    // Signed shortest difference b - a in degrees.
+    private func AngleDelta(a: Float, b: Float) -> Float {
+        let d = b - a;
+        if d > 3600.0 || d < -3600.0 {
+            return 0.0; // not a real angle (infinite); never loop on it
+        }
+        while d > 180.0 {
+            d = d - 360.0;
+        }
+        while d < -180.0 {
+            d = d + 360.0;
+        }
+        return d;
+    }
+
+    // --- AI walking (drive=ai, or the fallback) --------------------------------------------------------
 
     // Steers the puppet with AI move commands. The target is the network position plus a short lead along the
     // remote player's velocity, so a walking puppet keeps walking between updates instead of stopping at

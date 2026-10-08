@@ -453,6 +453,57 @@ void SimPlayer::ApplyTimeRates(const TimeRates& aRates)
     m_rates = aRates;
 }
 
+void SimPlayer::CaptureAnimInputs(std::vector<AnimInput>& aOut)
+{
+    if (!m_config.animOutput)
+        return;
+
+    const float speed = m_config.speed;
+    m_lastSpeed = speed;
+
+    AnimInput locomotion;
+    locomotion.kind = AnimInputKind::Feature;
+    locomotion.name = kSimAnimLocomotion;
+    locomotion.featureClass = kSimAnimFeatureClass;
+    locomotion.props.push_back({kSimAnimPropSpeed, AnimValue::FromFloat(speed)});
+    locomotion.props.push_back({kSimAnimPropMoving, AnimValue::FromBool(speed > 0.1f)});
+    aOut.push_back(locomotion);
+
+    AnimInput speedInput;
+    speedInput.kind = AnimInputKind::Float;
+    speedInput.name = kSimAnimSpeed;
+    speedInput.value = AnimValue::FromFloat(speed);
+    aOut.push_back(speedInput);
+
+    const TimeUs now = m_clock.NowUs();
+    if (m_nextAnimStep < 0)
+        m_nextAnimStep = now + kUsPerSecond;
+    if (now >= m_nextAnimStep)
+    {
+        m_nextAnimStep += kUsPerSecond;
+        AnimInput step;
+        step.kind = AnimInputKind::Event;
+        step.name = kSimAnimStep;
+        aOut.push_back(step);
+        ++m_animEventsProduced;
+    }
+}
+
+void SimPlayer::ApplyRemoteAnimInputs(PeerId aPeer, const std::vector<AnimInput>& aInputs, bool aFull)
+{
+    auto& remote = m_remoteAnim[aPeer];
+    ++remote.messages;
+    if (aFull)
+        ++remote.fullSets;
+    for (const auto& input : aInputs)
+    {
+        if (input.kind == AnimInputKind::Event)
+            ++remote.events;
+        else
+            remote.inputs[input.Key()] = input;
+    }
+}
+
 void SimPlayer::Teleport(const Vec3& aCenter)
 {
     m_config.center = aCenter;

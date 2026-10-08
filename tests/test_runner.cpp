@@ -81,6 +81,16 @@ public:
         lastRates = aRates;
         sim.ApplyTimeRates(aRates);
     }
+    void CaptureAnimInputs(std::vector<AnimInput>& aOut) override
+    {
+        Check();
+        sim.CaptureAnimInputs(aOut);
+    }
+    void ApplyRemoteAnimInputs(PeerId aPeer, const std::vector<AnimInput>& aInputs, bool aFull) override
+    {
+        Check();
+        sim.ApplyRemoteAnimInputs(aPeer, aInputs, aFull);
+    }
 
     sim::SimPlayer sim;
     std::thread::id mainThread;
@@ -349,6 +359,35 @@ TEST_CASE("runner: leaving during your own Sandevistan returns the game to norma
     RunUntil(both, [] { return false; }, 0.3);
     CHECK_EQ(client.game.timeRateCalls, calls);
     CHECK_EQ(client.game.wrongThreadCalls, 0);
+
+    host.runner.Leave("done");
+    RunUntil(both, [] { return false; }, 0.2);
+}
+
+TEST_CASE("runner: animation inputs go from one game to the other through the network thread")
+{
+    SteadyClock clock;
+    Machine host(clock, "Host", 100.0f);
+    Machine dancer(clock, "Dancer", 110.0f);
+    dancer.game.sim.SetAnimOutput(true);
+    const std::vector<Machine*> both{&host, &dancer};
+
+    std::string error;
+    REQUIRE(host.runner.Host(MakeHostConfig(27195), MakeClientConfig("Host"), error));
+    REQUIRE(dancer.runner.Join("127.0.0.1:27195", MakeClientConfig("Dancer"), error));
+    REQUIRE(RunUntil(both, [&] { return dancer.runner.GetStatus().clockSynced && host.runner.GetStatus().hostPlayers == 2; }, 8.0));
+
+    const PeerId dancerPeer = dancer.runner.LocalPeer();
+    REQUIRE(RunUntil(
+        both,
+        [&]
+        {
+            const auto& known = host.game.sim.KnownAnim();
+            return known.count(dancerPeer) == 1 && known.at(dancerPeer).inputs.size() == 2 && known.at(dancerPeer).events >= 2;
+        },
+        5.0));
+    CHECK_EQ(host.game.wrongThreadCalls, 0);
+    CHECK_EQ(dancer.game.wrongThreadCalls, 0);
 
     host.runner.Leave("done");
     RunUntil(both, [] { return false; }, 0.2);

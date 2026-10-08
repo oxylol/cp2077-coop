@@ -49,7 +49,19 @@ struct SimPlayerConfig
         TimeUs firstAfter = 3 * kUsPerSecond;
     };
     std::optional<Sandevistan> sandevistan;
+
+    // Produce animation inputs like a game would (a locomotion feature, a speed input, a step event each second
+    // while moving), to exercise the animation path without the game.
+    bool animOutput = false;
 };
+
+// The names the sim's animation inputs use (made-up hashes; the game uses engine name hashes).
+inline constexpr uint64_t kSimAnimLocomotion = 0x5133'A11E'0000'0001ull; // Feature
+inline constexpr uint64_t kSimAnimFeatureClass = 0x5133'A11E'0000'0002ull;
+inline constexpr uint64_t kSimAnimPropSpeed = 0x5133'A11E'0000'0003ull;
+inline constexpr uint64_t kSimAnimPropMoving = 0x5133'A11E'0000'0004ull;
+inline constexpr uint64_t kSimAnimSpeed = 0x5133'A11E'0000'0005ull; // Float
+inline constexpr uint64_t kSimAnimStep = 0x5133'A11E'0000'0006ull;  // Event
 
 // Something the bot wants its session to do; the owner of the session applies these (PumpCommands).
 struct SessionCommand
@@ -93,11 +105,14 @@ public:
     void OnVehicleSeats(uint32_t aNetId, const std::vector<SeatAssignment>& aSeats) override;
     void DriveVehicle(uint32_t aNetId, const VehiclePose& aPose) override;
     void ApplyTimeRates(const TimeRates& aRates) override;
+    void CaptureAnimInputs(std::vector<AnimInput>& aOut) override;
+    void ApplyRemoteAnimInputs(PeerId aPeer, const std::vector<AnimInput>& aInputs, bool aFull) override;
 
     // Commands for the session owner, and the answers.
     std::vector<SessionCommand> TakeCommands();
     void OnVehicleRegistered(uint32_t aNetId);
     void SetLocalPeer(PeerId aPeer) { m_localPeer = aPeer; }
+    void SetAnimOutput(bool aOn) { m_config.animOutput = aOn; }
 
     [[nodiscard]] const SimPlayerConfig& Config() const { return m_config; }
     [[nodiscard]] Vec3 Position() const { return m_position; }
@@ -116,6 +131,17 @@ public:
     [[nodiscard]] uint64_t VehicleDrives() const { return m_vehicleDrives; }
 
     [[nodiscard]] const TimeRates& Rates() const { return m_rates; }
+
+    // Animation inputs received from each remote player: the latest value per input, and counts.
+    struct RemoteAnim
+    {
+        std::map<uint64_t, AnimInput> inputs;
+        uint32_t events = 0;
+        uint32_t fullSets = 0;
+        uint32_t messages = 0;
+    };
+    [[nodiscard]] const std::map<PeerId, RemoteAnim>& KnownAnim() const { return m_remoteAnim; }
+    [[nodiscard]] uint32_t AnimEventsProduced() const { return m_animEventsProduced; }
     // Jumps somewhere else (fast travel, or a test moving a player into or out of range).
     void Teleport(const Vec3& aCenter);
 
@@ -161,6 +187,11 @@ private:
     std::map<PeerId, RemotePose> m_remotePoses;
     std::map<PeerId, std::string> m_remoteNames;
     std::map<PeerId, LocalAppearance> m_appearances;
+
+    std::map<PeerId, RemoteAnim> m_remoteAnim;
+    TimeUs m_nextAnimStep = -1;
+    uint32_t m_animEventsProduced = 0;
+    float m_lastSpeed = 0.0f;
 };
 // Applies a bot's commands to its session (ClientSession or SessionRunner).
 template<typename Session>

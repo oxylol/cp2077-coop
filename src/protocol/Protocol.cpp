@@ -62,6 +62,7 @@ const char* ToString(MsgId aId)
     case MsgId::TimeFieldMembership: return "TimeFieldMembership";
     case MsgId::PlayerState: return "PlayerState";
     case MsgId::PlayerAppearance: return "PlayerAppearance";
+    case MsgId::PlayerAnim: return "PlayerAnim";
     case MsgId::Chat: return "Chat";
     case MsgId::VehicleState: return "VehicleState";
     case MsgId::VehicleSpawn: return "VehicleSpawn";

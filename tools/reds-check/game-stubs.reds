@@ -8,6 +8,8 @@ native func OperatorAdd(a: script_ref<String>, b: script_ref<String>) -> String
 native func OperatorAdd(a: Int32, b: Int32) -> Int32
 native func OperatorAssignAdd(out a: Int32, b: Int32) -> Int32
 native func OperatorSubtract(a: Float, b: Float) -> Float
+native func OperatorAdd(a: Float, b: Float) -> Float
+native func OperatorMultiply(a: Float, b: Float) -> Float
 native func OperatorNeg(a: Float) -> Float
 native func OperatorGreater(a: Float, b: Float) -> Bool
 native func OperatorLess(a: Float, b: Float) -> Bool
@@ -121,16 +123,18 @@ public native class AttitudeAgent extends IScriptable {
     public final native func SetAttitudeGroup(attitudeGroup: CName)
 }
 
-public native class TimeDilatable extends Entity {
+// Hierarchy as in the game (RED4ext.SDK and the S8 RTTI dump): GameObject <- TimeDilatable <- PuppetBase <- gamePuppet.
+// Time dilation is NOT on GameObject; calling it on a GameObject broke compilation in 0.5.0.
+public native class GameObject extends Entity {
+    public final native func GetAttitudeAgent() -> ref<AttitudeAgent>
+}
+
+public native class TimeDilatable extends GameObject {
     public final native func SetIndividualTimeDilation(reason: CName, dilation: Float, opt duration: Float, opt easeInCurve: CName, opt easeOutCurve: CName, opt ignoreGlobalDilation: Bool, opt useRealTime: Bool)
     public final native func UnsetIndividualTimeDilation(opt easeOutCurve: CName)
 }
 
-public native class GameObject extends TimeDilatable {
-    public final native func GetAttitudeAgent() -> ref<AttitudeAgent>
-}
-
-public native class gamePuppet extends GameObject {
+public native class gamePuppet extends TimeDilatable {
     public final native func GetResolvedGenderName() -> CName
 }
 

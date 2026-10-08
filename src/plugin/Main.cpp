@@ -6,6 +6,7 @@
 #include "client/SessionRunner.hpp"
 #include "core/Version.hpp"
 #include "net/GnsTransport.hpp"
+#include "plugin/AnimCapture.hpp"
 #include "plugin/CoopSystem.hpp"
 #include "plugin/Plugin.hpp"
 #include "plugin/ScriptTypes.hpp"
@@ -26,6 +27,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
         // The process is exiting: stop the network thread, then leave the network library loaded rather
         // than tearing it down under the game's feet.
         coop::SessionRunner::StopAllThreads();
+        coop::plugin::AnimCapture::Get().Uninstall();
         coop::GnsTransport::ShutdownLibrary(false);
         coop::plugin::Shutdown();
         break;

@@ -65,15 +65,26 @@ Delivered after spike rounds A and B ([08](08-spike-results.md)), waiting for an
 
 | Area | Delivered |
 |---|---|
-| Puppet body | Plain NPC body that animates (the V-lookalikes slide; opt-in in `coop.ini`); the remote player's body gender is reported for later |
+| Puppet body | Plain NPC body that animates (the V-lookalikes slide; opt-in in `coop.ini`); the remote player's body gender is reported for later. Replaced in 0.5, below |
 | Puppet movement | AI move commands towards the network position with a short lead, walk/run/sprint by speed, catch-up, respawn when far behind; player-aligned on spawn ([01 §4](01-architecture.md#4-remote-players-as-entities)) |
 | Dev panel | Round C probes (S3b, S1b, S2b, S8b, S1v-b), lineup of V-like bodies, round D probes (S2c, S1c) |
 | Two games on one PC | S13 works on Steam; the second game becomes dev instance 2 on its own (own name and id) |
 
+Delivered with 0.5, "direct drive" (asked for instead of round E), waiting for the in-game check ([07](07-testing-guide.md)):
+
+| Area | Delivered |
+|---|---|
+| Puppet body | The game's third-person V matching the local V's body; still looks like the local V |
+| Puppet movement | AI off, placed every frame at the interpolated network pose (no AI routing, ~0.1 s behind); automatic fallback to AI walking per puppet; `coop.ini [puppet] drive` |
+| Animation | Capture of the local V's animation inputs (hooked native handlers), `PlayerAnim` messages (protocol 4), applied to puppets; motion values (speed, direction, vertical speed, turn rate, moving) from the pose for graph inputs named in `coop.ini [anim]` |
+| Dev panel | Rebuilt: mirror test (your own inputs on a placed third-person V), input recording, function list, live motion-input names; probes trimmed to the open questions |
+| Tests | 60 total: animation-input codec and relay, late joiners, motion values, the walking and third-person features |
+
 Still to do (needs spike results):
 
-- A player body that animates under AI movement (S3c), then each puppet showing its own player's appearance, clothing and weapon (S1b, starting from the bare `No_Impostor` body).
-- Jumps, vaults, climbing and the facing of a standing puppet.
+- Round F results: capture, placement and animation of direct-drive puppets ([07](07-testing-guide.md)); more capture points or motion-input names as needed.
+- Each puppet showing its own player's appearance, clothing and weapon (S1c `slotIDsToOmit`, or the bare `No_Impostor` body).
+- Passive puppets (S2d).
 - Game side of vehicles: register V's car, spawn and drive proxies, mount puppets in seats, seat the local V as a passenger (S1v-b).
 - Dev instance mode for two instances (only if S13 shows Steam allows it).
 - Version pinning self-test.

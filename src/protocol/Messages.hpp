@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "core/AnimInput.hpp"
 #include "core/BitStream.hpp"
 #include "core/Quantize.hpp"
 #include "core/Types.hpp"
@@ -448,6 +449,28 @@ struct PlayerAppearance
         return PeerField(s, peer) && s.U8(bodyGender) && s.Blob(customizationState, kMaxAppearanceBlob)
             && SerializeVector(s, equipment, kMaxEquipmentItems,
                                [](S& aS, std::string& aItem) { return aS.String(aItem, kMaxEquipmentNameLength); });
+    }
+};
+
+// Animation inputs the sender's game applied to its V (core/AnimInput.hpp). Sent at up to 15 Hz with the inputs
+// that changed and every event since the last message; every 2 s with everything (`full`), so late joiners and lost
+// state catch up. Reliable: events must arrive, and the volume is small.
+struct PlayerAnim
+{
+    static constexpr MsgId kId = MsgId::PlayerAnim;
+    static constexpr Lane kLane = Lane::Events;
+    static constexpr bool kReliable = true;
+
+    PeerId peer = kInvalidPeer; // filled in by the host when relaying
+    TimeUs sessionTimeUs = 0;
+    bool full = false;
+    std::vector<AnimInput> inputs;
+
+    template<typename S>
+    bool Serialize(S& s)
+    {
+        return PeerField(s, peer) && s.I64(sessionTimeUs) && s.Bool(full)
+            && SerializeVector(s, inputs, kMaxAnimInputsPerMessage, [](S& aS, AnimInput& aInput) { return aInput.Serialize(aS); });
     }
 };
 

@@ -15,6 +15,8 @@ constexpr TimeUs kIdleTickUs = 50'000;
 constexpr TimeUs kHostLingerUs = 500'000;
 constexpr TimeUs kAppearanceIntervalUs = 1'000'000;
 constexpr size_t kMaxQueuedStatus = 256;
+constexpr size_t kMaxQueuedAnim = 512;       // remote animation messages waiting for the main thread
+constexpr size_t kMaxPendingAnimEvents = 64; // local animation events waiting for the network thread
 
 // Every live runner, so plugin unload can stop their threads.
 std::mutex g_runnersMutex;
@@ -40,14 +42,16 @@ public:
             VehicleDespawned,
             VehicleAuthority,
             VehicleSeats,
+            Anim,
         };
         Kind kind = Kind::Status;
         PeerId peer = kInvalidPeer;
         std::string text;
         LocalAppearance appearance;
         VehicleInfo vehicle; // netId is used by every vehicle event
-        bool flag = false;   // authority: local
+        bool flag = false;   // authority: local; anim: full set
         std::vector<SeatAssignment> seats;
+        std::vector<AnimInput> anim;
     };
 
     // --- network thread (IGameAdapter) ----------------------------------------------------------------------------
@@ -168,6 +172,54 @@ public:
         m_hasTimeRates = true;
     }
 
+    void ApplyRemoteAnimInputs(PeerId aPeer, const std::vector<AnimInput>& aInputs, bool aFull) override
+    {
+        std::scoped_lock lock(m_mutex);
+        // A frozen main thread (loading screen) must not pile up without bound; the next full set catches up.
+        if (m_animQueued >= kMaxQueuedAnim && !aFull)
+            return;
+        Event event;
+        event.kind = Event::Kind::Anim;
+        event.peer = aPeer;
+        event.flag = aFull;
+        event.anim = aInputs;
+        m_events.push_back(std::move(event));
+        ++m_animQueued;
+    }
+
+    // Network thread: the local animation inputs published since the last call.
+    bool TakeAnim(std::vector<AnimInput>& aOut)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_animPending.empty() && m_animEvents.empty())
+            return false;
+        aOut.clear();
+        for (auto& [key, input] : m_animPending)
+            aOut.push_back(std::move(input));
+        aOut.insert(aOut.end(), m_animEvents.begin(), m_animEvents.end());
+        m_animPending.clear();
+        m_animEvents.clear();
+        return true;
+    }
+
+    // Main thread: this frame's local animation inputs.
+    void PublishAnim(const std::vector<AnimInput>& aInputs)
+    {
+        std::scoped_lock lock(m_mutex);
+        for (const auto& input : aInputs)
+        {
+            if (input.kind == AnimInputKind::Event)
+            {
+                if (m_animEvents.size() < kMaxPendingAnimEvents)
+                    m_animEvents.push_back(input);
+            }
+            else
+            {
+                m_animPending[input.Key()] = input;
+            }
+        }
+    }
+
     // Main thread: the latest rates, if any arrived since the session started.
     bool LatestTimeRates(TimeRates& aOut)
     {
@@ -233,6 +285,7 @@ public:
         aEvents.swap(m_events);
         m_events.clear();
         m_statusQueued = 0;
+        m_animQueued = 0;
         aPoses.assign(m_poses.begin(), m_poses.end());
         m_poses.clear();
     }
@@ -249,6 +302,8 @@ public:
         m_vehiclePoses.clear();
         m_timeRates = {};
         m_hasTimeRates = false;
+        m_animPending.clear();
+        m_animEvents.clear();
     }
 
     TimeUs LongestGap() const
@@ -271,6 +326,9 @@ private:
     std::map<uint32_t, VehiclePose> m_vehiclePoses;
     TimeRates m_timeRates;
     bool m_hasTimeRates = false;
+    size_t m_animQueued = 0;
+    std::map<uint64_t, AnimInput> m_animPending;
+    std::vector<AnimInput> m_animEvents;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -367,6 +425,9 @@ void SessionRunner::TickLocked()
         LocalAppearance appearance;
         if (m_adapter->TakeAppearanceChange(appearance))
             m_client->UpdateAppearance(appearance);
+        std::vector<AnimInput> anim;
+        if (m_adapter->TakeAnim(anim))
+            m_client->PublishAnimInputs(anim);
 
         m_client->Tick();
         m_adapter->NoteNetTick(m_clock.NowUs());
@@ -527,6 +588,11 @@ void SessionRunner::Pump(IGameAdapter& aGame)
             m_adapter->PublishAppearance(aGame.GetLocalAppearance());
         }
 
+        std::vector<AnimInput> anim;
+        aGame.CaptureAnimInputs(anim);
+        if (!anim.empty())
+            m_adapter->PublishAnim(anim);
+
         for (const auto netId : m_localVehicles)
         {
             VehicleSample vehicle;
@@ -563,6 +629,7 @@ void SessionRunner::Pump(IGameAdapter& aGame)
             aGame.OnVehicleAuthority(event.vehicle.netId, event.flag);
             break;
         case NetSideAdapter::Event::Kind::VehicleSeats: aGame.OnVehicleSeats(event.vehicle.netId, event.seats); break;
+        case NetSideAdapter::Event::Kind::Anim: aGame.ApplyRemoteAnimInputs(event.peer, event.anim, event.flag); break;
         }
     }
     for (const auto& [peer, pose] : poses)

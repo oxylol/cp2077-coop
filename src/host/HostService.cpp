@@ -567,6 +567,20 @@ void HostService::HandlePacket(Peer& aPeer, const Packet& aPacket)
         break;
     }
 
+    case MsgId::PlayerAnim:
+    {
+        msg::PlayerAnim anim;
+        if (!Decode(data, size, anim))
+        {
+            ++m_counters.malformed;
+            return;
+        }
+        anim.peer = aPeer.id;
+        Broadcast(anim, aPeer.conn);
+        ++m_counters.animRelayed;
+        break;
+    }
+
     case MsgId::Chat:
     {
         msg::Chat chat;

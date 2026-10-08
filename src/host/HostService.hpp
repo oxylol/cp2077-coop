@@ -70,6 +70,7 @@ public:
     struct Counters
     {
         uint64_t statesRelayed = 0;
+        uint64_t animRelayed = 0;
         uint64_t rejected = 0;
         uint64_t malformed = 0;
         uint64_t vehicleStatesRelayed = 0;

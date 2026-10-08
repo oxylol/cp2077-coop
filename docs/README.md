@@ -12,11 +12,12 @@ Design documents for a 2–4 player story co-op mod for Cyberpunk 2077 (base gam
 | [04-feasibility-and-risks.md](04-feasibility-and-risks.md) | Easy / Hard / Research rating per system, reverse-engineering spikes, legal and project risks |
 | [05-local-testing.md](05-local-testing.md) | Testing with one PC and one game copy: two instances side by side, headless simulated players, network impairment |
 | [06-roadmap.md](06-roadmap.md) | Milestones M0–M5 with exit criteria checkable on one PC, estimates, spike dependencies |
-| [07-testing-guide.md](07-testing-guide.md) | Step by step: putting the project on GitHub, and testing a new build in the game |
+| [07-testing-guide.md](07-testing-guide.md) | Step by step: testing a new build in the game (now: direct-drive puppets) |
 | [08-spike-results.md](08-spike-results.md) | What the in-game experiments (spikes) showed so far and what each result decided |
 | [09-development-handoff.md](09-development-handoff.md) | Start here to continue development: rules, status, architecture map, build and checks, next steps, gotchas |
+| [10-github-setup.md](10-github-setup.md) | Putting the project on GitHub (once), and committing each update |
 
-Status: **deliverables 1–3 done; M0a delivered and running in the game; M0b portable parts delivered** (network thread, vehicle sync); **M1 time fields delivered on the network side** (Sandevistan/Kerenzikov sync). The game-side parts wait for spike results. See the repository README for what is built and verified.
+Status: **deliverables 1–3 done; M0a delivered and running in the game; M0b portable parts delivered** (network thread, vehicle sync); **M1 time fields delivered on the network side** (Sandevistan/Kerenzikov sync). Slow motion is applied in the game; **0.5 "direct drive" puppets** (third-person V, AI off, placed every frame, animated with the remote V's captured inputs) are partly verified (rounds F–I: placement and capture work; the animating body shows only a neck); the player body runs but was the female one; the lookalike looks like V but can't walk; round O tries the male player body with the lookalike's impostor. See the repository README for what is built and verified.
 
 ## Baseline facts (checked 2026-10-07)
 
@@ -47,7 +48,7 @@ Status: **deliverables 1–3 done; M0a delivered and running in the game; M0b po
 
 ## Next
 
-Rounds A–C are done ([08-spike-results.md](08-spike-results.md)): puppets walk (plain NPC body), slow motion is applied in the game, and two games run on one PC. Now: the game side of vehicles, then combat (enemies target puppets through threat injection). In parallel, research on a V body that animates and shows its own player's looks (S3c, S1b/S1c).
+Rounds A–N are done ([08-spike-results.md](08-spike-results.md)): slow motion is applied in the game, and two games run on one PC. Version 0.5 replaces the AI-walked plain-NPC puppets with "direct drive": the game's third-person V, AI off, placed every frame, animated with the remote V's captured animation inputs ([01 §4](01-architecture.md#4-remote-players-as-entities)); placement and capture work, and the player body runs; round O combines it with the lookalike's look ([07](07-testing-guide.md)). Then: each puppet with its own player's looks (S1c), passive puppets (S2d), the game side of vehicles, combat.
 
 ## Where to put this
 

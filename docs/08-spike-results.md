@@ -99,7 +99,7 @@ Not run in this round; see round C.
 
 - **Confirmed:** starting the game a second time just works (Steam, patch 2.31).
 
-**Decided:** two-instance testing is the main loop for anything that needs two real games. The second game started from the same folder becomes dev instance 2 automatically (own player name "V 2" and id). Both games share the save folder; see [07 B0](07-testing-guide.md#b0-before-every-test-session).
+**Decided:** two-instance testing is the main loop for anything that needs two real games. The second game started from the same folder becomes dev instance 2 automatically (own player name "V 2" and id). Both games share the save folder; see [07 T0](07-testing-guide.md#t0-before-every-test-session).
 
 ## Round D (October 8)
 
@@ -116,3 +116,116 @@ Not run in this round; see round C.
 ### Delay of AI-walked puppets
 
 The tester finds AI-walked puppets lag noticeably. Sources, largest first: the follow bots themselves trail V by 2.5–4 m and move at most 5 m/s by design (so a bot test exaggerates it); the AI walks at the animation's speed and re-targets in steps; the network buffer (~0.1 s). Tuned: 0.5 s lead, re-targeting up to 5×/s, catching up from 3 m behind. The better long-term answer is a "direct drive": position set every frame and the animation fed from the network, which is what round E starts to test (S3d).
+
+## Round E (skipped)
+
+Not run: instead of comparing ways to move a puppet, the direct drive was built straight away (version 0.5, [01 §4](01-architecture.md#4-remote-players-as-entities)): the game's third-person V, its AI switched off, placed every frame, animated with the remote V's captured animation inputs, falling back to AI walking by itself if placements don't move it. Its open questions (S3d "AI off + teleport", S3c "animation inputs on a player body") are now round F. The other round E probes (S2d passive puppets, S1c impostor settings) stay in the dev panel's Probes tab.
+
+## Round F (October 8): direct drive, first try
+
+Version 0.5.1, one game, mirror test and probes.
+
+- **Confirmed, and a blocker:** the teleportation facility does **not** move a spawned third-person V, with its AI on *or* off. The mirror stayed where it spawned, and the probe "AI off, teleport every frame for 4 s" moved 0.00 m in four tries (121 teleports each). The same call moves cars smoothly (S1v) and V. → The bridge no longer teleports puppets; the plugin offers other placement methods (Codeware's `Entity.SetWorldTransform`, an `AITeleportCommand` through the NPC's AI), and the dev panel tests them all automatically (round G).
+- **Confirmed:** the plugin's AI switch works (`puppet AI switched off` four times; RTTI call of `IComponent.Toggle`). The mirror body appears 0.1 s after it is created.
+- **Confirmed (S1c):** setting the lookalike's impostor `slotIDsToOmit` to `WeaponRight, WeaponLeft` and toggling the impostor off and on stops it from copying V's weapons. So a lookalike can keep the local V's body and face while holding the remote player's own weapon (items can be put in its hands, round C).
+- **Failed:** animation capture didn't start: `engine tables not found`. The handler table address from RED4ext.SDK (`CBaseFunction_Handlers`), read as "pointer to the table" as the SDK does, is null on 2.31. → 0.5.2 checks both readings (pointer to the table, or the table itself) against the native functions of `gameObject`, which must land in the game's code, and uses the one that fits; the panel shows the scores. It also captures at the animation controller itself (`entAnimationControllerComponent.ApplyFeature`, `SetInput*`, `PushEvent`, the functions every animation input from a script ends in, per the round F dump), and falls back to the replication leftovers only if those aren't there.
+- From the dump (`probe-anim-components.txt`): V's entity has `entAnimatedComponent`s named `root`, `deformations`, `shadow` and `face_rig`; `entAnimatedComponent` has native `SetLocalPosition` / `SetLocalTransform`. The lookalike has `moveComponent`, `movePoliciesComponent` and `moveMotionPlannerComponent` besides its AI (round C component list): likely what keeps it in place.
+
+## Round G (October 8): which placement moves a body
+
+Version 0.5.2, one game.
+
+- **Confirmed:** the placement test moved the third-person V with **transform** (Codeware `SetWorldTransform`) and with **teleport** in single 3 m steps; the **AI teleport** works too but looks choppy. Since a teleport *every frame* moved nothing in round F, a teleport probably only lands when it isn't replaced by the next one a frame later [inference]; transform sets the position at once, so it is the default (`[puppet] place=auto` tries it first).
+- **Capture started:** the handler table is the table itself, not a pointer to it (`as pointer 0/31, as array 30/31 -> array`), and 6 capture points were routed on `entAnimationControllerComponent` (`ApplyFeature`, `SetInput*`, `PushEvent`). **But they got 0 calls**, from V or anyone: scripts don't call the controller's natives. The game's `AnimationControllerComponent.ApplyFeature/SetInputFloat/PushEvent` helpers are script functions that queue `AnimInputSetter*` / `AnimExternalEvent` events on the entity (`entAnimInputSetterFloat {key, value}` and so on in RED4ext.SDK), and the player's state machines use `gamestateMachineGameScriptInterface.SetAnimationParameter*` / `PushAnimationEvent` (natives, in `anim-functions.txt`). → 0.5.3 captures there: the state machine natives, and `Entity.QueueEvent` filtered to animation events on the local V.
+
+## Round H (October 8): capture works, the mirror doesn't animate
+
+Version 0.5.3, one game.
+
+- **Placement, exactly** (placement test, twice): teleport and transform move the third-person V **only with its movement component (`moveComponent`) switched off** (3.00 m, stays); with nothing or only the AI off, 0.00 m. The AI teleport moves it with everything on, but choppily. The mirror with teleport + `moveComponent` off followed 100% of frames. → `coop.ini [puppet] switchOff=moveComponent` is now the default, and the plugin switches it off even for bodies without an AI.
+- **Capture works:** 847 inputs in a short session. `gamestateMachineGameScriptInterface.SetAnimationParameterFeature` 667 calls from V, `…Float` 56, `…Bool` 14, `PushAnimationEvent` 80, `Entity.QueueEvent` 30 from V (7634 for others, 1313 non-animation events). The controller natives only see other characters. `anim-record.txt` has, among others: features `LocomotionStateMachine` (`AnimFeature_PlayerLocomotionStateMachine { inAirState }`), `WeaponHandlingData`, `MeleeData`, `AnimFeature_AimPlayer`, `ZoomAnimData`, `Landing { type, impactSpeed }`, `PlayerCoverActionState`, `CombatData`, `WeaponSprintBlock`; floats `crouch`, `safe`; bool `has_scope`; events `StandEnter`, `Dodge`, `Slide`, `InAir`, `Jump`, `Land`, `Shoot`, `SwitchFiremode`.
+- **Nothing carries walking speed or direction:** the player's locomotion speed reaches V's graph natively (from V's own movement), not through scripts. A placed body needs it as motion inputs.
+- **The mirror doesn't animate** with these inputs applied (through the controller natives in 0.5.3). Open: does its graph (the cutscene lookalike's) have these inputs at all? → 0.5.4 dumps the graphs' variables and AnimFeature slots, applies inputs the way the game's scripts do (queued AnimInputSetter events), lets the mirror be other V bodies, and has test buttons (crouch, Jump).
+
+## Round I (October 8): the player bodies animate, but show only a neck
+
+Version 0.5.4, one game, the mirror as each of six bodies, graph dumps (`anim-graphs-*.txt`).
+
+- **Confirmed:** the PlayerPuppet bodies (`Character.TPP_Player`, `Character.Player_Puppet_Photomode`, `Character.Player_Replacer_Puppet_Base`) use **V's own root animation graph** (path hash `7c8ef3ac7af95509`, the same as the local V's) and **animate with the captured inputs**: the mirror moves like V.
+- **The catch:** those bodies show **only a neck**. Their body and head come from somewhere they don't have when spawned this way [inference: V's look on these records is put together by the player's own systems (the player's appearance and garment setup), which a spawned copy doesn't run].
+- **The cutscene lookalike** (`TPP_Player_Cutscene_…`) is the only body that looks like V (its impostor component copies the local V, round C), but it uses **another graph** (`c672de6d7a8d01f1`) and doesn't animate with V's inputs. The plain NPC body and the lookalike without an impostor don't animate either.
+- **Motion input names:** the graph dumps have the float variables `speed_horizontal`, `move_direction`, `speed_vertical` and `rotation_speed_yaw`; 0.5.5 sends the motion values (worked out from the placements) into them by default.
+
+→ 0.5.5 tries both ways of getting an animating body that looks like V, both while the body is being built (Codeware's `Entity/Initialize` callback, for entities tagged `Cp2077Coop.Puppet` or `CoopMirror`):
+1. **an impostor added** to a player body that has none (set up like the lookalike's: a character replica with its own head), so a PlayerPuppet body copies the local V's look while keeping V's graph;
+2. **V's graph given** to the lookalike's root animated component (off by default).
+
+## Round J (October 8): the impostor doesn't dress a player body
+
+Version 0.5.5, one game (read from the game folder: `red4ext/logs`, `probe-results.txt`).
+
+- **Confirmed:** Codeware's callback works: `body setup: listening for puppet and mirror bodies being built`. The mirror spawned as `TPP_Player` (with an impostor asked for), the lookalike, the replacer, the no-impostor lookalike.
+- **Still only a neck:** `TPP_Player` with "Copy my look onto it" looked the same. Whether the impostor was actually added isn't in the log (0.5.5 counted it only in the panel's status line); 0.5.6 logs one line per body. Either way, an impostor alone doesn't make a player body look like V. The option is now off by default.
+- **Not tested:** the lookalike with V's graph (the graph option was off whenever the lookalike was spawned).
+- The player bodies have no AI controller (`puppet AI switch: the body has no AI controller`); switching their movement component off is enough for placement.
+- **Why a neck** [inference]: in round I's component dump, V's look is made of meshes that items bring: a morph-target head (`he_000_pma__basehead` and its parts), the body as a garment mesh (`t0_000_pma_base__full`), hair, beard, every piece of clothing, the arm cyberware, plus the character-customization controllers. Round C found `Items.PlayerMaTppHead` and `Items.PlayerFppHead` in V's inventory and `Items.PlayerMaTppHead` on the lookalike. A spawned `TPP_Player` gets no items, so only the neck (part of the body template) shows.
+
+→ 0.5.6: the dev panel dresses the mirror in V's items (every item in V's attachment slots except weapons, the first-person head swapped for the third-person one), lists both bodies' slot items and components (`probe-looks.txt`), and puts single items on it for trying.
+
+## Round K (October 8): dressed, crouching, not running
+
+Version 0.5.6, one game (read from the game folder).
+
+- **Confirmed:** dressing works. The mirror as `TPP_Player` got all 10 of V's slot items besides the weapon (`Chest`, `Eyes`, `Feet`, `Head`, `Legs`, `RightArm` holstered fists, `SystemReplacementCW` Sandevistan, `Torso`, `TppHead` head, `UnderwearBottom`) and looks like V: head, face, hair, body, clothes.
+- **Headgear missing:** the `Head` item (a helmet) went on, but doesn't show. The body swaps its third-person head for the first-person one by itself: `Items.PlayerMaTppHead` put in `TppHead`, one second later the slot holds `Items.PlayerFppHead`. [inference] The player body treats itself as first person, which is also when the game hides V's headgear (camera clipping). Candidates: its `gameTPPRepresentationComponent`, its `gameFPPCameraComponent`.
+- **Crouch animates, running doesn't.** The named float inputs (`speed_horizontal` and the others) don't move the legs. V's root graph has the feature `playerLocomotion` (`animAnimFeature_PlayerMovement`: movement and facing direction, speed, desired and stabilized speed, acceleration, strafe yaw, yaw speed, vertical speed, horizontal movement angle, in air), which the player's movement sets natively, never through scripts. → 0.5.7 builds it from the motion values (world-space directions) and sends it every frame with the other inputs; switchable in the dev panel and `coop.ini [anim] movementFeature`.
+- Dressing a second time on a dressed body: 9 of 10 `AddItemToSlot` calls return false (slots taken); harmless.
+- The lookalike was spawned with V's graph (`body setup: NPCPuppet (110 components): impostor off; graph swapped to V's`); no result reported yet.
+- **Tester's idea:** the lookalike's look on a normal NPC body. The plain NPC's root graph (round I dump) walks through the feature `locomotion` (`animAnimFeature_Locomotion`: action, style, path curvature, …), which its AI movement drives; a placed NPC would need that fed the same way, and its graph doesn't take V's other inputs (crouch, weapon, jump). Kept as the fallback if the player body can't be made to run.
+
+## Round L (October 8): the legs run; the body is a first-person woman
+
+Version 0.5.7, one game (read from the game folder).
+
+- **Confirmed:** with the built `playerLocomotion` feature the dressed `TPP_Player` runs with correct legs, and the arms swing ("jog"). Without it (panel checkbox off) the legs stay still. So V's graph takes its walking from that feature, and world-space directions work.
+- **Still wrong on the player body:** the torso is "very buggy"; no head; it's a **woman's** body (`probe-looks.txt`: `t0_000_pwa_base__full_shadow`, `n0_000_pwa_fpp__neck`, `pwa` clothes, while V is `pma`), and none of V's face, hair or body features. `TppHead` again ends up holding `Items.PlayerFppHead`.
+- **The cutscene lookalike** has all of V's looks (the impostor copies the local V) but doesn't animate.
+- **Crash:** giving an NPC body (the lookalike, the no-impostor lookalike) V's root animation graph crashes the game right after the swap (twice: the log ends at `graph swapped to V's`). Player bodies already have V's graph, so the option never changed them. → removed in 0.5.8.
+- [inference] Everything wrong with the player body fits one cause: it behaves as a **first-person** body. On the real V the game switches between first- and third-person representation with the `gameTPPRepresentationComponent` (events `gamePrepareTPPRepresentationEvent` → `gameAppearancesReadyTPPRepresentationEvent` → `gameFinalizeActivationTPPRepresentationEvent`, `gameDeactivateTPPRepresentationEvent`; quest node `EntityManagerEnablePlayerTPPRepresentation`); it has a slot listener (which would explain the head swap) and a character-customization state updater (face, hair, body). V's root graph has the feature `TPPRepresentation` (`gameAnimFeature_TPPRepresentation { IsActive }`).
+
+→ 0.5.8: the dev panel sends the mirror the prepare and finalize events after it appears, the plugin sends `TPPRepresentation { IsActive = true }` with the motion inputs (`coop.ini [anim] tppFeature`), and the mirror can be spawned with V's appearance name (Codeware `DynamicEntitySpec.appearanceName`); `List looks` writes both bodies' appearance and template.
+
+## Round M (October 8): the player body stays a first-person woman
+
+Version 0.5.8, one game (read from the game folder).
+
+- **No effect:** the TPP representation events (`gamePrepareTPPRepresentationEvent`, then `gameFinalizeActivationTPPRepresentationEvent`, both queued without error): `TppHead` still ends up holding `Items.PlayerFppHead`, still female, no head, none of V's face or hair (the tester sees the default female V hair). V's appearance name is `None` (player bodies don't use one), so spawning with it changed nothing.
+- **T-pose:** sending `TPPRepresentation { IsActive = true }` puts the player body in a T-pose with no animation. → off by default (`[anim] tppFeature=false`).
+- From Codeware's list of known resource paths: the player's third-person templates are `base\characters\entities\player\player_ma_tpp.ent` / `player_wa_tpp.ent`, the lookalikes `player_ma_tpp_cutscene.ent` / `…_cutscene_no_impostor.ent`, and there is a mirror-reflection body `player_ma_tpp_reflexion.ent` (plus `ep1\characters\entities\player\player_ma_tpp_ep1.ent`). `Character.TPP_Player` spawns a female body, so it most likely points at `player_wa_tpp.ent`.
+
+**Decision (tester):** work on the cutscene lookalike, which has V's whole look (gender, face, hair, clothes) through its impostor; it is an `NPCPuppet` whose root graph (`c672de6d7a8d01f1`) has the same kind of variables as V's (`speed_horizontal`, `desired_speed_horizontal`, `move_direction`, `crouch`, `sprint`, `jump`, …) but reacted to none of them in any round, and slid under AI walking in round C. [inference] It has no walk animations to play: cutscene bodies get their animations from scenes.
+
+→ 0.5.9: the graph dump also lists each animated component's rig and animation sets (gameplay and cinematic, by path hash) and the animation setup extensions and graph tables, so the lookalike's sets can be compared with the player body's; an option lends an NPC body the local V's gameplay animation sets while it is built (`[puppet] borrowAnimsets`, panel checkbox; may crash); the speed also goes to `desired_speed_horizontal` (motion names can be joined with `+`).
+
+## Round N (October 8): the lookalike's graph doesn't walk
+
+Version 0.5.9, one game; dumps read from the game folder.
+
+- **The lookalike** (`TPP_Player_Cutscene_Male`): root rig `c5f417c6257b385d`, graph `c672de6d7a8d01f1` with 4 gameplay animation sets, plus an animation setup extension named **"Player TPP Animation Setup"** (3 sets, one with 65 variable names), `man_face_base_animations` (57 face sets) and `ui_animations`. So it does carry third-person V animation sets.
+- **The player body** (`TPP_Player`): root rig `ba775c3ad74a1dbe` (the female third-person rig), V's graph `7c8ef3ac7af95509`, 101 gameplay sets, `CarAnimsets` (28).
+- **V** (first person): root rig `655fc64ff60fef6c`, the same graph, 102 different gameplay sets (first person), `EP1 animsets` (20).
+- **Lending** V's 201 gameplay sets to the lookalike: logged (`animation sets borrowed: 201`), no crash, **no change**: still frozen. They are first-person sets for another rig.
+- The lookalike keeps `Items.PlayerMaTppHead` in `TppHead` (an NPC body doesn't swap heads); the player body swaps it.
+- [inference] The lookalike's graph is made for scenes: it has the animations but no walking logic that reads `speed_horizontal` and the like (or reads them only inside scene-driven states). Making it walk would mean changing its graph, which crashed in round L.
+
+**Conclusion:** the lookalike's *look* comes from its impostor, the player body's *walking* from V's graph and the `playerLocomotion` feature. Codeware's known resource paths list the male third-person player body as its own template, `base\characters\entities\player\player_ma_tpp.ent` (`Character.TPP_Player` gives the female one), and a mirror-reflection body `player_ma_tpp_reflexion.ent`. → 0.5.10 can spawn a body from a template path (`CoopSystem.SetSpawnTemplate` writes the path hash into Codeware's `DynamicEntitySpec.templatePath`); round O tries the male player body with the lookalike's impostor.
+
+(The tester relayed that CyberpunkMP's author is fine with us reading its code. Not taken up: the clean-room rule stands, and the license reportedly forbids it; a written permission from the author would be needed to revisit.)
+
+## Round O (pending): the male player body with the impostor
+
+Steps in [07 T4l](07-testing-guide.md#t4l-the-male-player-body-with-the-impostor-round-o). Questions:
+
+1. Does `player_ma_tpp.ent` spawn a male player body that walks with the `playerLocomotion` feature?
+2. With the impostor, does it look like V (face, hair, head, clothes)? Dressed instead, does it keep a head, with or without its `gameTPPRepresentationComponent`?
+3. What is the reflection body?

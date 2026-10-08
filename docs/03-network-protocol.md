@@ -88,13 +88,14 @@ Direction key: **C→H** client to host, **H→C** host to one client, **H→A**
 |---|---|---|---|---|---|
 | 0x0301 | `PlayerState` | P→P | L2 | transform, velocity, aim yaw/pitch, locomotion + stance, weapon state, melee/ability move id + time, vehicle seat, individual time rate ρ, in-menu flag; stamped (fieldId, W) | 30 Hz (60 Hz in close combat / Sandevistan) |
 | 0x0302 | `PlayerAppearance` | P→P | L1 | CC state blob, body gender, voice variant | Join + on change |
-| 0x0303 | `PlayerEquipment` | P→P | L1 | equipped items (record + appearance), cyberware visuals, clothing | On change |
+| 0x0303 | `PlayerAnim` | P→H→P | L1 | sender, session time, full-set flag, up to 256 animation inputs: kind (feature, float, int, bool, vector, event), name hash, then the value, or for a feature its class hash and up to 64 property values (float, int, bool, name, vector). As built (protocol 4) | ≤ 15 Hz, changed inputs only, every event exactly once; full set every 2 s |
 | 0x0304 | `PlayerVitals` | P→P | L1 | health %, armor, status-effect icon set, level, heat stage | On change, ≤ 4 Hz |
 | 0x0305 | `PlayerAbility` | P→P | L1 | ability (camo, berserk, …), on/off, duration, params. Sandevistan/Kerenzikov go through `TimeFieldActivate` instead | Event |
 | 0x0306 | `PlayerDowned` / `PlayerRevived` / `PlayerRespawned` | P→A | L1 | bleedOutEnd, reviver, respawn location | Event |
 | 0x0307 | `ReviveStart` / `ReviveCancel` | P→P | L1 | reviver, target | Event |
 | 0x0308 | `Ping` | P→A | L1 | world position, kind (go here, enemy, loot) | Event |
 | 0x0309 | `Chat` | P→A | L1 | text | Event |
+| 0x030A | `PlayerEquipment` | P→P | L1 | equipped items (record + appearance), cyberware visuals, clothing (planned; was 0x0303) | On change |
 | 0x0310 | `VehicleState` | owner→H→A | L2 | netId, epoch, seq, session time, position, rotation (smallest-three quaternion, 47 bits), velocity, steer, throttle, brake, flags (lights, horn, handbrake, siren, destroyed); 44 bytes | 30 Hz per driven vehicle |
 
 ## 7. Combat (0x04xx)
@@ -174,6 +175,6 @@ Direction key: **C→H** client to host, **H→C** host to one client, **H→A**
 
 ## 12. Versioning rules
 
-- `protocolVersion` increments on any wire change; mismatches are rejected in `Hello`.
+- `protocolVersion` increments on any wire change; mismatches are rejected in `Hello`. Current: **4** (2 vehicles, 3 time fields, 4 animation inputs).
 - Any change to a message's `Serialize()` bumps the version; the format has no optional fields.
 - Snapshot codec carries its own 8-bit schema id so recorded `.netlog` files remain replayable by the desync viewer.

@@ -1,71 +1,335 @@
-Cp2077Coop 0.4.1: walking puppets, slow motion in game, spike rounds A-E
+Cp2077Coop 0.5.10: spawn the male player body by template path
+
+Round N (0.5.9): the cutscene lookalike carries third-person V
+animation sets ("Player TPP Animation Setup") but its graph is a scene
+graph with no walking; lending it V's 201 first-person gameplay sets
+changed nothing (no crash). Its look comes from its impostor; the
+player body's walking from V's graph and the playerLocomotion feature.
+Character.TPP_Player is the female body (rig ba775c3a...); the male
+third-person player body is its own template, player_ma_tpp.ent.
+
+- CoopSystem.SetSpawnTemplate(spec, path): writes a template path hash
+  (RED4ext::ResourcePath) into Codeware's DynamicEntitySpec.templatePath,
+  which CET can't build from a string.
+- Dev panel: the mirror body list starts with
+  template:...\player_<ma|wa>_tpp.ent and ..._tpp_reflexion.ent (by the
+  local V's gender); startMirror spawns those by path.
+- Docs: round N results and round O questions (08), round O steps
+  (07 T4l: male player body with the impostor, dressed, head test with
+  gameTPPRepresentationComponent off, the reflection body), 01, 09,
+  READMEs. CyberpunkMP's code stays out (clean room, license) unless
+  its author gives written permission.
+
+- Version check: the plugin logs its version on load and has
+  CoopSystem.GetVersion(); the dev panel shows it at the top of the
+  Direct drive tab and warns on a mismatch with its own PANEL_VERSION
+  (the first try of this round ran a stale 0.5.9 build).
+  kVersionPatch was stale (4) and is now 10.
+
+Checks: 60 tests; reds-check 0 problems; plugin-check all 9 files;
+dev panel parses.
+
+---- 0.5.9 ----
+Round M (0.5.8): the TPP representation events and V's appearance name
+changed nothing on the player body (still female, first-person head,
+no customization); the TPPRepresentation feature T-posed it. The
+tester chose to continue with the cutscene lookalike (V's whole look
+through its impostor), which has never animated.
+
+- Graph dump (DumpAnimGraphs) also lists each animated component's rig
+  and animation sets (gameplay and cinematic, by path hash), every
+  animation setup extension's sets, and the graph lookup tables.
+- BodySetup: borrowAnimsets ([puppet] borrowAnimsets, default false;
+  panel "Lend it my animation sets"): an NPC body gets the local V's
+  gameplay animation sets (root + setup extensions, read on the main
+  thread) appended to its root animated component while it is built;
+  logged per body. SetBodyOptions(addImpostor, borrowAnimsets).
+- Motion names can be joined with "+" (the same value to each);
+  speed now defaults to speed_horizontal+desired_speed_horizontal (the
+  lookalike's graph has the second).
+- tppFeature defaults to false (T-pose); the panel no longer switches
+  to third person on its own or sets an appearance name; dressing skips
+  bodies that copy V through an impostor.
+- Docs: round M results and round N questions (08), round N steps
+  (07 T4k), 01 section 4, 09, READMEs.
+
+Checks: 60 tests; reds-check 0 problems; plugin-check all 9 files;
+dev panel parses.
+
+---- 0.5.8 ----
+Round L (0.5.7): with the built playerLocomotion feature the dressed
+TPP_Player runs with correct legs (without it, no). But it is a
+first-person woman's body: broken torso, no head (TppHead ends up with
+Items.PlayerFppHead), pwa meshes while V is pma, none of V's face, hair
+or body features. The cutscene lookalike has V's looks but doesn't
+animate; giving it (or the no-impostor lookalike) V's root graph
+crashed the game both times.
+
+- Removed useVGraph (BodySetup graph swap, coop.ini, natives, panel):
+  it crashed every NPC body and never changed a player body.
+  SetBodyOptions takes only addImpostor.
+- core/AnimMotion.hpp: TppRepresentationInput, the player graph's
+  TPPRepresentation feature (gameAnimFeature_TPPRepresentation
+  { IsActive }); the adapter sends it with the motion inputs
+  ([anim] tppFeature, default true; SetTppFeature/GetTppFeature;
+  panel checkbox).
+- Dev panel: the mirror is spawned with V's appearance name
+  (DynamicEntitySpec.appearanceName), sent
+  gamePrepareTPPRepresentationEvent and, 0.6 s later,
+  gameFinalizeActivationTPPRepresentationEvent when it appears (and on
+  a button), then dressed; a check logs its TppHead item and appearance.
+  List looks writes both bodies' appearance names and templates.
+- Docs: round L results and round M questions (08), round M steps
+  (07 T4j), 01 section 4, 09, 06, READMEs.
+
+Checks: 60 tests (new: the third-person feature); reds-check
+0 problems; plugin-check all 9 files; dev panel parses.
+
+---- 0.5.7 ----
+Round K (0.5.6): dressed in V's slot items, the TPP_Player mirror looks
+like V (head, face, hair, body, clothes) and crouches with V, but
+doesn't run, and its headgear is hidden: the body swaps the third-person
+head for Items.PlayerFppHead by itself. V's root graph has the feature
+playerLocomotion (animAnimFeature_PlayerMovement), which the player's
+movement sets natively and which a placed body never gets.
+
+- core/AnimMotion.hpp: MotionValues gain facing yaw, movement heading
+  and smoothed acceleration; MotionToPlayerMovement builds the
+  playerLocomotion feature (movement and facing directions in world
+  space, speed, desired/stabilized speed, acceleration, strafe yaw, yaw
+  speed, vertical speed, horizontal movement angle, in air above
+  2 m/s vertical); NameHashOf = the engine's CName hash (FNV-1a 64).
+- The adapter sends the feature with the named motion floats, to the
+  mirror and to directly driven puppets ([anim] movementFeature,
+  default true; natives SetMotionFeature/GetMotionFeature; dev panel
+  checkbox). Motion status names it.
+- Docs: round K results and round L questions (08), round L steps
+  (07 T4i: running, headgear with gameTPPRepresentationComponent /
+  gameFPPCameraComponent switched off), 01 section 4, 09, 06, READMEs.
+
+Checks: 59 tests (new: the walking feature), also under ASan/UBSan;
+reds-check 0 problems; plugin-check all 9 files; dev panel parses.
+
+---- 0.5.6 ----
+Round J (0.5.5): Codeware's Entity/Initialize callback registers, but
+the TPP_Player mirror with an impostor is still only a neck; the
+lookalike with V's graph wasn't tried. V's look on a player body is
+most likely made of meshes that items in attachment slots bring (head,
+body, hair, clothes: round I component dump; round C inventory), which
+a spawned body has none of.
+
+- Dev panel (Direct drive): "Dress it in my items when it appears"
+  (default on), "Dress it like me now", "List looks (V and mirror)"
+  (probe-looks.txt: items in every attachment slot from TweakDB, and
+  both component lists), and one item into one slot for trying. The
+  dressing gives the mirror every item V has in a slot except weapons,
+  swaps the first-person head for Items.PlayerMa/WaTppHead, skips other
+  first-person items, and logs each call before making it.
+- Body setup logs one line per prepared body (class, components,
+  impostor and graph result), so a round can be checked from the log.
+- [puppet] addImpostor now defaults to false (no visible effect).
+- Docs: round J results and round K questions (08), round K steps
+  (07 T4h), 01 section 4, 09, READMEs.
+
+Checks: 58 tests; reds-check 0 problems; plugin-check all 9 files;
+dev panel parses.
+
+---- 0.5.5 ----
+Round I (0.5.4): the PlayerPuppet bodies (Character.TPP_Player, the
+photo mode puppet, the replacer base) use V's own root animation graph
+and animate with the captured inputs, but show only a neck. The cutscene
+lookalike looks like V (its impostor copies the local V) but has another
+graph and doesn't animate. The graphs take speed_horizontal,
+move_direction, speed_vertical and rotation_speed_yaw.
+
+- New src/plugin/BodySetup.*: registers CoopSystem.OnBodyInitialize with
+  Codeware's CallbackSystem (Entity/Initialize, targets
+  DynamicEntityTarget.Tag Cp2077Coop.Puppet / CoopMirror). While a body
+  is built it adds a gameImpostorComponent (character replica with head)
+  to player bodies without one ([puppet] addImpostor, default on), and
+  optionally points the root animated component's graph at the local
+  V's ([puppet] useVGraph, default off). Bodies are only touched once
+  both targets are on; the handler is unregistered if they can't be
+  added; the local V is never touched; the singleton is never destroyed
+  (it holds a resource reference) and forgets V's graph on world detach.
+- AnimCapture recognises the local V by address (player system), so
+  spawned PlayerPuppet bodies aren't captured as V.
+- Motion inputs default to the round I names; an empty coop.ini value
+  means the default, "none" turns one off, "-name" negates.
+- Natives: SetBodyOptions/GetBodyOptions, GetMotionInputs,
+  OnBodyInitialize. Dev panel: "Copy my look onto it (add an impostor)"
+  and "Give it my animation graph", TPP_Player first in the body list,
+  checkboxes and motion fields synced from the plugin.
+- Review fix before shipping: Red::AsHandle<CoopSystem, IScriptable>
+  recursed forever through WeakHandle's conversion operator; the system
+  now locks its own weak handle.
+- Docs: round I results and round J questions (08), round J steps
+  (07 T4g), 01 section 4, 09 (status, settings, next steps, gotchas),
+  READMEs.
+
+Checks: 58 tests; reds-check 0 problems; plugin-check all 9 files;
+dev panel parses.
+
+---- 0.5.4 ----
+Round H (0.5.3): capture works (847 inputs: state machine features such
+as LocomotionStateMachine, WeaponHandlingData, AimPlayer, Landing;
+floats crouch/safe; events Jump/Land/Slide/Dodge/Shoot ...), but the
+mirror doesn't animate with them. Walking speed/direction is never
+scripted (it reaches V's graph natively). Placement works only with the
+body's moveComponent off (teleport or transform; AI teleport is choppy).
+
+- coop.ini [puppet] switchOff=moveComponent is the default; the plugin
+  switches those components even for bodies without an AI.
+- Inputs are applied by queueing the game's own AnimInputSetter* /
+  AnimExternalEvent events on the puppet ([anim] applyVia=events,
+  default), or through the controller natives (applyVia=controller);
+  switchable live (SetAnimApplyVia).
+- New diagnostics (src/plugin/AnimDiagnostics.*): DumpAnimGraphs writes
+  each animated component's graph (path hash, float/bool/int/vector
+  variables with default/min/max, AnimFeature slots) to
+  anim-graphs-<label>.txt. ApplyAnimTest pushes one test input.
+- Dev panel: mirror body choice (cutscene lookalike, TPP_Player,
+  photomode puppet, replacer, no-impostor, plain NPC), graph dump,
+  apply-via switch, test buttons (crouch 1/0, !Jump, free input).
+- Docs: round H results, round I steps (07 T4f), 09.
+
+Checks: 58 tests; reds-check 0 problems; plugin-check all 8 files.
+
+---- 0.5.3 ----
+Round G (0.5.2): placing a body works (transform and single teleports
+move it, the AI teleport is choppy); the capture's handler table was
+found (the table itself, 30/31 gameObject natives check out), but the 6
+hooks on entAnimationControllerComponent got 0 calls: scripts never
+call the controller's natives.
+
+- AnimCapture now hooks the player state machine natives
+  (gamestateMachineGameScriptInterface.SetAnimationParameter*/
+  PushAnimationEvent; owner = the interface's executionOwner) and
+  Entity.QueueEvent, reading AnimInputSetter* (key/value) and
+  AnimExternalEvent (name) events queued on the local V by the game's
+  AnimationControllerComponent helpers. Other entities' calls are passed
+  on before any argument is read. The controller natives stay hooked.
+- Consecutive duplicate events within a frame are sent once.
+- Docs: round G results and round H steps (07, 08, 09, 01 section 4).
+
+Checks: 58 tests; reds-check 0 problems; plugin-check all 7 files.
+
+---- 0.5.2 ----
+Round F (0.5.1 in the game) found that the teleportation facility does
+not move a spawned NPC at all, AI on or off (mirror and probe: 0.00 m),
+and that animation capture never started ("engine tables not found").
+The plugin's AI switch worked, and the impostor's slotIDsToOmit stops a
+lookalike from copying V's weapons (S1c confirmed).
+
+Placement (src/plugin/Placement.*)
+- New native CoopSystem.PlaceEntity(entity, position, yaw, method):
+  1 teleport (teleportation facility), 2 transform (Codeware
+  Entity.SetWorldTransform), 3 AI teleport (AITeleportCommand through
+  the NPC's AI, previous command cancelled). All through RTTI.
+- SetEntityComponents(entity, class, on) and coop.ini [puppet]
+  switchOff: component classes (e.g. moveComponent) switched along with
+  the AI.
+- Bridge: puppets are placed through PlaceEntity. Auto chain
+  ([puppet] place=auto): transform (AI off) -> AI teleport (AI on,
+  <=10/s) -> teleport -> AI walking; a failed method is reported in the
+  panel. The bridge no longer calls the teleportation facility itself.
+
+Animation capture
+- The handler table is found by checking both readings of RED4ext.SDK's
+  CBaseFunction_Handlers (pointer to the table / the table itself)
+  against gameObject's native functions, which must point into the
+  game's code; the scores are in the status line.
+- Captures at the animation controller (entAnimationControllerComponent
+  ApplyFeature, SetInput*, PushEvent), where every script-fed input ends;
+  calls for other characters are passed on without reading arguments.
+  The replication leftovers are only used if those aren't found. Static
+  functions are included.
+
+Dev panel
+- Direct drive tab: automatic placement test (7 configurations, ~20 s,
+  results in the Log tab; the first that works is picked for the
+  mirror), placement method choice, "also switch off" list. The mirror
+  measures following only while you move.
+- The CET-only teleport probe is gone (the test covers it).
+
+Docs: 07 is round G (T0-T8); 08 has the round F results and round G
+questions; 01 section 4, 09 (next steps, gotchas), coop.ini updated.
+
+Checks: 58 tests; tools/reds-check 0 problems; tools/plugin-check all
+files compile; the dev panel parses as Lua 5.1.
+
+0.5.1 fixed 0.5.0's script compile error (time dilation called on a
+GameObject). Everything below is 0.5.0, in case it wasn't committed:
 
 Story co-op for Cyberpunk 2077 2.31 (base game + Phantom Liberty), 2-4
 players, Seamless-Co-op style: the host's save owns the world, everyone
 keeps their own V, no tether. Start with docs/09-development-handoff.md;
 it has the rules, status, architecture map, build and checks, next steps
-and the gotchas we already hit.
+and the gotchas we already hit. In-game test steps: docs/07.
 
-What works in the game (tested on 2.31, one PC)
-- RED4ext plugin loads; host/join from the CET dev panel.
-- Fake players (coop-sim) and a second copy of the game can join. The
-  second game started from the same folder becomes dev instance 2
-  (player "V 2", own client id) automatically.
-- Remote players appear as plain NPCs steered by AI move commands: they
-  walk, run and sprint with real animations (0.5 s lead, up to 5
-  re-targets/s, catch-up, respawn when far behind). V-lookalike bodies
-  (Character.TPP_Player_Cutscene_*) look like the local V but slide;
-  opt-in via coop.ini [puppet].
-- Sandevistan/Kerenzikov time fields are applied in the game: global
-  time dilation from the session's world rate, local V exempt while
-  activating, puppets at their own players' rates
-  (SetIndividualTimeDilation with ignoreGlobalDilation), normal time as
-  soon as a session ends. coop.ini [time] applyToGame=false turns it
-  off.
+Puppets: plain NPC + AI walking replaced by "direct drive"
+- Body: the game's third-person V (Character.TPP_Player_Cutscene_Male/
+  Female), the one matching the local V's body (only that one spawns).
+  It still copies the local V's look and weapon (impostor; S1c open).
+- Movement: no AI routing. The plugin switches the puppet's AI off
+  (CoopSystem.SetPuppetAI -> IComponent.Toggle through RTTI, so a missing
+  function logs instead of breaking script compilation), and the bridge
+  places it every frame at the interpolated network pose and yaw
+  (TeleportationFacility.Teleport, only when it moved/turned/drifted).
+  ~0.1 s behind instead of the AI's delay.
+- Fallback: a body that stays put while placements move >1 m away from
+  it (2 s) goes back to AI walking by itself (M0b behaviour), retries
+  direct drive after 60 s or with its next body, and stays on AI walking
+  after a second fallback; a body with no AI is respawned instead. The
+  AI switch is retried for 3 s. The panel says which mode and why.
+  coop.ini [puppet] drive=ai uses AI walking from the start.
+- Animation: src/plugin/AnimCapture swaps native handler-table entries of
+  the Replicate*/SetAnimationParameter*/PushAnimationEvent functions,
+  reads the arguments, keeps inputs aimed at the local V, calls the
+  original; restored on unload. New message PlayerAnim (0x0303, protocol
+  4): changed inputs at <=15 Hz, every event exactly once, full set every
+  2 s for late joiners. Receivers apply them to the puppet's animation
+  controller (ApplyFeature, SetInput*, PushEvent).
+- Motion values: speed, direction relative to facing, vertical speed,
+  turn rate and moving, worked out from the pose (core/AnimMotion.hpp),
+  fed into graph inputs named in coop.ini [anim] (empty until round F
+  finds the names; settable live from the dev panel).
 
-What works headless (coop-sim, tests)
-- Networking: GameNetworkingSockets, lanes, impairment presets, password
-  handshake, version checks, clock sync, 30 Hz state + interpolation,
-  network thread with the game touched only on the main thread.
-- Vehicles: spawn, seats, owner handoff with epochs, late joiners.
-- Time fields: host-validated activations, 150 m proximity groups,
-  identical rates on every machine, eases, late-information correction.
-- 48 tests (xmake run coop-tests); no ASan/UBSan errors.
+Dev panel (cet/coop-dev) rebuilt
+- Direct drive tab: mirror test (a third-person V placed in front of you
+  every frame, AI off, YOUR inputs applied), record inputs to
+  anim-record.txt, list animation functions to anim-functions.txt, dump
+  animation components, try motion-input names live, capture status.
+- Probes tab trimmed to open questions (placement without the plugin,
+  impostor/looks, passive puppets, combat, vehicles). Older probes are
+  in the history up to 0.4.1.
 
-Spike results (details in docs/08-spike-results.md)
-- S1: the V-lookalike copies the LOCAL V through gameImpostorComponent;
-  only the one matching the local V's body spawns; items can be put on
-  it. S1 vehicles: spawn, per-frame teleport (smooth), NPC as driver or
-  passenger all work.
-- S2: a plain NPC body is attacked once made hostile per agent; the
-  lookalike (no senses or visible object) needs threat injection. Open:
-  a plain-NPC puppet joins fights on its own (S2d).
-- S3: AI move commands animate a plain NPC; teleports don't move spawned
-  NPCs with AI on; player bodies slide.
-- S8: global dilation, V exemption and per-entity rates all confirmed.
-- S13: the game starts twice on Steam; two-game testing works.
+Docs
+- 07 rewritten: round F, testing direct drive (T0-T7). GitHub setup
+  moved to the new docs/10-github-setup.md.
+- 01 section 4, 03 (PlayerAnim 0x0303, PlayerEquipment planned at
+  0x030A, protocol 4), 06, 08 (round E skipped, round F questions), 09,
+  READMEs updated. coop.ini: [puppet] drive, [anim] capture/apply and
+  motion-input names. .gitignore: anim-record.txt, anim-functions.txt.
 
-Next (docs/09 section 9)
-1. Round E results: direct drive (AI off + per-frame position) vs.
-   follow-with-matched-speed, to cut puppet delay.
-2. Passive puppets; then vehicles in the game (portable side is done).
-3. Combat (M1), per-player appearance, the game's own Sandevistan.
+Not yet run in the game: everything above. Open: whether the hooks see
+V's locomotion, whether a body with AI off follows placements, whether
+the inputs animate it, and which graph inputs need motion values.
+
+Checks: 58 tests pass (xmake run coop-tests), also under ASan/UBSan;
+tools/reds-check (0 problems); tools/plugin-check (all plugin files
+compile against the real SDK headers); dev panel parses as Lua 5.1.
 
 Rules
 - Every player owns the game; no CDPR assets or game files in the repo
-  (keep probe-*.txt RTTI dumps out); follow CDPR's modding guidelines;
-  never bypass DRM; back up saves before co-op testing.
+  (keep probe-*.txt and anim-*.txt dumps out); follow CDPR's modding
+  guidelines; never bypass DRM; back up saves before co-op testing.
 - Clean room: no code from other CP2077 multiplayer projects.
   CyberpunkMP's license forbids studying it for a competing product,
   so it is never read.
 - New engine calls go into the CET dev panel first (pcall, log line
-  before each risky call); only confirmed calls go into CoopBridge.reds.
-
-Build: tools\dev\bootstrap.ps1 once, xmake f --game_dir=<game folder>,
-xmake, xmake run coop-tests. Linux: xmake && xmake run coop-tests.
-Checks without the game: tools/reds-check/check.sh (scripts),
-tools/plugin-check/check.sh (plugin). In-game test steps:
-docs/07-testing-guide.md.
+  before each risky call); only confirmed calls go into CoopBridge.reds,
+  unconfirmed ones go through the plugin.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_012ZFP34SBZK3augWiBG7J9n

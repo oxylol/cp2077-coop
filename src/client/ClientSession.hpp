@@ -2,6 +2,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -88,6 +89,14 @@ public:
     [[nodiscard]] uint32_t StatesSent() const { return m_statesSent; }
     [[nodiscard]] uint32_t StatesReceived() const { return m_statesReceived; }
 
+    // --- Animation inputs (core/AnimInput.hpp) ---
+
+    // The local V's inputs since the last call: the latest value per input, events in order. Sent at up to 15 Hz
+    // (what changed, plus events), and everything every 2 s.
+    void PublishAnimInputs(const std::vector<AnimInput>& aInputs);
+    [[nodiscard]] uint32_t AnimMessagesSent() const { return m_animSent; }
+    [[nodiscard]] uint32_t AnimMessagesReceived() const { return m_animReceived; }
+
     // --- Vehicles (docs/02-systems.md §11) ---
 
     // Registers a vehicle this machine spawned (e.g. V summoned a car) and announces it. Returns its netId, or 0
@@ -164,6 +173,7 @@ private:
 
     void SendTimeSync(TimeUs aLocalNow);
     void SendLocalState(TimeUs aLocalNow);
+    void SendAnimInputs(TimeUs aLocalNow);
     void DriveRemotes();
 
     void HandleVehicleSpawn(const msg::VehicleSpawn& aSpawn);
@@ -228,5 +238,13 @@ private:
     TimeUs m_nextTimePrune = 0;
     uint32_t m_nextVehicle = 1;
     TimeUs m_nextVehicleSend = 0;
+
+    std::map<uint64_t, AnimInput> m_animCurrent; // latest value of each local input, by AnimInput::Key()
+    std::set<uint64_t> m_animDirty;
+    std::vector<AnimInput> m_animEvents;
+    TimeUs m_nextAnimSend = 0;
+    TimeUs m_nextAnimFull = 0;
+    uint32_t m_animSent = 0;
+    uint32_t m_animReceived = 0;
 };
 } // namespace coop

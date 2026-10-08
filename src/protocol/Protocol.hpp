@@ -5,8 +5,8 @@
 namespace coop
 {
 // Bump on any wire change; peers with different versions are rejected during the handshake.
-// 2: vehicles (M0b). 3: time fields (M1).
-inline constexpr uint16_t kProtocolVersion = 3;
+// 2: vehicles (M0b). 3: time fields (M1). 4: animation inputs (M0b).
+inline constexpr uint16_t kProtocolVersion = 4;
 
 inline constexpr uint16_t kDefaultPort = 27077;
 
@@ -44,6 +44,7 @@ enum class MsgId : uint16_t
 
     PlayerState = 0x0301,
     PlayerAppearance = 0x0302,
+    PlayerAnim = 0x0303,
     Chat = 0x0309,
     VehicleState = 0x0310,
 

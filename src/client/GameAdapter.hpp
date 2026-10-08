@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "core/AnimInput.hpp"
 #include "core/Math.hpp"
 #include "core/Types.hpp"
 #include "core/VehicleInterpolation.hpp"
@@ -133,5 +134,12 @@ public:
 
     // --- Time fields. Called every tick once the clock is synced. ---
     virtual void ApplyTimeRates(const TimeRates& /*aRates*/) {}
+
+    // --- Animation inputs (core/AnimInput.hpp). Defaults do nothing. ---
+    // The inputs the game applied to the local V since the last call: the latest value of each input, and every
+    // event in order. Called once per frame.
+    virtual void CaptureAnimInputs(std::vector<AnimInput>& /*aOut*/) {}
+    // Another player's inputs, to apply to their puppet. `aFull` marks a complete set (sent every 2 s).
+    virtual void ApplyRemoteAnimInputs(PeerId /*aPeer*/, const std::vector<AnimInput>& /*aInputs*/, bool /*aFull*/) {}
 };
 } // namespace coop

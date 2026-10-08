@@ -9,6 +9,7 @@
 
 #include "core/Crypto.hpp"
 #include "core/Log.hpp"
+#include "core/Version.hpp"
 
 namespace coop::plugin
 {
@@ -156,7 +157,7 @@ void Initialize(RED4ext::v1::PluginHandle aHandle, const RED4ext::v1::Sdk* aSdk)
                                                    : "client-id.txt";
     env.clientId = LoadOrCreateClientId(env.pluginDir / idFile);
 
-    COOP_LOG_INFO("Cp2077Coop loaded: game build %s%s", env.gameBuild.c_str(),
+    COOP_LOG_INFO("Cp2077Coop %s loaded: game build %s%s", coop::kVersionString, env.gameBuild.c_str(),
                   env.devInstance > 0 ? (", dev instance " + std::to_string(env.devInstance)).c_str() : "");
 }
 

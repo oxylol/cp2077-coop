@@ -1,11 +1,14 @@
 # Remote-player puppet record (TweakXL). See docs/01-architecture.md §4.
 #
-# The default puppet body for now: a plain NPC, because it walks, runs and sprints with real animations under AI
-# move commands. The game's V-lookalike records look like V but only slide (spike round C), so they are opt-in
-# through coop.ini:
+# Not the default body any more: puppets are the game's third-person V (Character.TPP_Player_Cutscene_Male/Female),
+# placed every frame and animated with the inputs captured from the remote player's V ("direct drive").
+#
+# This plain NPC body is kept for AI walking, where it animates with real walk/run/sprint animations (spike S3).
+# To use it, in coop.ini:
 #
 #   [puppet]
-#   recordMale=Character.TPP_Player_Cutscene_Male
-#   recordFemale=Character.TPP_Player_Cutscene_Female
+#   drive=ai
+#   recordMale=Cp2077Coop.Character.RemotePlayer
+#   recordFemale=Cp2077Coop.Character.RemotePlayer
 Cp2077Coop.Character.RemotePlayer:
   $base: Character.spr_animals_bouncer1_ranged1_omaha_mb

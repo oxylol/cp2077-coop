@@ -10,7 +10,7 @@
 -- The game plugin builds on Windows only and needs the vendored SDKs (tools/dev/bootstrap.ps1).
 
 set_project("Cp2077Coop")
-set_version("0.4.1")
+set_version("0.5.10")
 set_xmakever("2.8.5")
 
 set_languages("cxx20")
