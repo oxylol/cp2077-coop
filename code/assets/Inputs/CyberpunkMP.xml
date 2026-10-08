@@ -4,17 +4,9 @@
 	<blend from="__ANY__" to="UI_Multiplayer" event="BUTTON_RELEASE_IF_TO_DOESNT_CONTAIN" />
 	<blend from="__ANY__" to="UI_ChatInput" event="AXIS_RESET_TO_ZERO_NO_WAIT" />
 	<blend from="__ANY__" to="UI_ChatInput" event="BUTTON_RELEASE_IF_TO_DOESNT_CONTAIN" />
-	<blend from="__ANY__" to="UI_EmoteSelection" event="AXIS_RESET_TO_ZERO_NO_WAIT" />
-	<blend from="__ANY__" to="UI_EmoteSelection" event="BUTTON_RELEASE_IF_TO_DOESNT_CONTAIN" />
-	<blend from="UI_EmoteSelection" to="__ANY__" event="AXIS_RESET_TO_ZERO_NO_WAIT" />
-	<blend from="UI_EmoteSelection" to="__ANY__" event="BUTTON_RELEASE_IF_TO_DOESNT_CONTAIN" />
 
 	<mapping name="UIConnectToServer_Button" type="Button" >
 		<button id="IK_Slash" />
-    </mapping>
-
-	<mapping name="UIEmote_Button" type="Button" >
-		<button id="IK_Period" />
     </mapping>
 
 	<mapping name="UIShop_Button" type="Button" >
@@ -55,12 +47,6 @@
         <action name="ChatBottom" map="ChatBottom_Button" />
     </context>
 
-    <context name="UI_EmoteSelection" >
-        <action name="UIEmote" map="UIEmote_Button" />		
-		<action name="mouse_x" map="MouseX" priority="-1" />
-		<action name="mouse_y" map="MouseY" priority="-1" />
-    </context>
-
     <context name="UI_ShopSelection" >
         <action name="UIShop" map="UIShop_Button" />		
 		<action name="mouse_x" map="MouseX" priority="-1" />
@@ -91,11 +77,6 @@
 		<event name="BUTTON_RELEASED" />
 	</acceptedEvents>
 
-	<acceptedEvents action="UIEmote">
-		<event name="BUTTON_PRESSED" />
-		<event name="BUTTON_RELEASED" />
-	</acceptedEvents>
-
 	<acceptedEvents action="UIShop">
 		<event name="BUTTON_HOLD_COMPLETE" />
 		<event name="BUTTON_HOLD_PROGRESS" />
@@ -114,7 +95,6 @@
         <action name="UIConnectToServer" map="UIConnectToServer_Button" />
         <action name="UIDisconnectFromServer" map="UIDisconnectFromServer_Button" />
         <action name="UIEnterChatMessage" map="UIEnterChatMessage_Button" />
-        <action name="UIEmote" map="UIEmote_Button" />
         <action name="UIShop" map="UIShop_Button" />
         <action name="UIJob" map="UIJob_Button" />
     </context>
