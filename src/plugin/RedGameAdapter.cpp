@@ -2,6 +2,8 @@
 
 #include <sstream>
 
+#include <RED4ext/Scripting/Natives/entEntity.hpp>
+
 #include "core/Log.hpp"
 #include "plugin/AnimCapture.hpp"
 #include "plugin/ScriptTypes.hpp"
@@ -11,6 +13,11 @@ namespace coop::plugin
 namespace
 {
 constexpr int32_t kFemaleFlag = 0x80;
+// Set on a puppet's pose when its player sent their own look: the bridge then spawns a body of that player's gender
+// (otherwise one of the local V's, which gets the local V's look).
+constexpr int32_t kOwnLookFlag = 0x100;
+// A body is given its look this long after it first appears (the dev panel's dressing waited 0.5 s, round K).
+constexpr auto kLookDelay = std::chrono::milliseconds(500);
 
 Red::Vector4 ToRed(const Vec3& aValue)
 {
@@ -83,8 +90,10 @@ bool RedGameAdapter::CaptureLocal(LocalSample& aOut)
     aOut.yaw = sample.yaw;
     aOut.pitch = sample.pitch;
     aOut.locomotion = static_cast<uint8_t>(sample.locomotion & 0xFF);
-    // The body-gender bit travels in the appearance message, not in every state update.
-    m_localFemale = (sample.flags & kFemaleFlag) != 0;
+    // The body-gender bit travels in the appearance message, not in every state update. An invalid sample (no V
+    // yet) has no flags, so the last answer is kept.
+    if (sample.valid)
+        m_localFemale = (sample.flags & kFemaleFlag) != 0;
     aOut.flags = static_cast<uint8_t>(sample.flags & 0x7F);
     return true;
 }
@@ -93,9 +102,19 @@ LocalAppearance RedGameAdapter::GetLocalAppearance()
 {
     LocalAppearance appearance;
     LocalSample sample;
-    if (CaptureLocal(sample) && sample.valid)
-        appearance.bodyGender = m_localFemale ? 1 : 0;
-    // Customization state and equipment: spike S1b (puppets copy the local V's look for now).
+    if (!CaptureLocal(sample) || !sample.valid)
+        return appearance;
+    appearance.bodyGender = m_localFemale ? 1 : 0;
+    // Customization state and the items that dress V (CyberpunkMP's appearance data; src/plugin/Looks.hpp).
+    if (m_puppetLooks)
+    {
+        Look look;
+        std::string error;
+        Looks::Get().CaptureLocal(LocalPlayerHandle(), m_localFemale, look, error);
+        appearance.customizationState = look.customization;
+        appearance.equipment = EncodeLookItems(look.items);
+        m_localLook = std::move(look);
+    }
     return appearance;
 }
 
@@ -113,6 +132,58 @@ void RedGameAdapter::OnRemotePlayerJoined(const RemotePlayerInfo& aInfo)
 void RedGameAdapter::OnRemoteAppearance(PeerId aPeer, const LocalAppearance& aAppearance)
 {
     m_bodyGender[aPeer] = aAppearance.bodyGender;
+    auto& entry = m_looks[aPeer];
+    auto items = DecodeLookItems(aAppearance.equipment);
+    const bool female = aAppearance.bodyGender == 1;
+    if (entry.own && entry.look.female == female && entry.look.customization == aAppearance.customizationState
+        && entry.look.items == items)
+        return; // the same look again (e.g. sent to a player who joined later)
+    entry.look.female = female;
+    entry.look.customization = aAppearance.customizationState;
+    entry.look.items = std::move(items);
+    entry.own = !entry.look.customization.empty() || !entry.look.items.empty();
+    // A body that already has a look (another one, or the local V's while theirs was on its way) is replaced, so
+    // items don't pile up on it; the bridge spawns a new one with the next pose.
+    if (entry.appliedTo != 0)
+    {
+        if (const auto bridge = Bridge())
+        {
+            auto peer = static_cast<uint32_t>(aPeer);
+            Red::CallVirtual(bridge.instance, "RemovePuppet", peer);
+        }
+    }
+    entry.appliedTo = 0;
+    COOP_LOG_INFO("look of player %u: %s body, %u byte(s) of customization, %u item(s)",
+                  static_cast<unsigned>(aPeer), entry.look.female ? "female" : "male",
+                  static_cast<unsigned>(entry.look.customization.size()), static_cast<unsigned>(entry.look.items.size()));
+}
+
+void RedGameAdapter::ApplyPuppetLook(PeerId aPeer, const Red::Handle<Red::IScriptable>& aEntity)
+{
+    auto& entry = m_looks[aPeer];
+    const auto* entity = reinterpret_cast<RED4ext::ent::Entity*>(aEntity.instance);
+    const uint64_t id = entity->entityID.hash;
+    const auto now = std::chrono::steady_clock::now();
+    if (id != entry.seenEntity)
+    {
+        entry.seenEntity = id;
+        entry.seenSince = now;
+    }
+    if (entry.appliedTo == id || now - entry.seenSince < kLookDelay)
+        return;
+    entry.appliedTo = id;
+    if (entry.own)
+    {
+        Looks::Get().Apply(aEntity, entry.look);
+        return;
+    }
+    // A player without a look of their own (a bot): the local V's, on a body of the local V's gender.
+    Look local = m_localLook;
+    std::string error;
+    if (local.customization.empty() && local.items.empty())
+        Looks::Get().CaptureLocal(LocalPlayerHandle(), m_localFemale, local, error);
+    local.female = m_localFemale;
+    Looks::Get().Apply(aEntity, local);
 }
 
 void RedGameAdapter::OnRemotePlayerLeft(PeerId aPeer)
@@ -120,6 +191,7 @@ void RedGameAdapter::OnRemotePlayerLeft(PeerId aPeer)
     const auto name = m_names.count(aPeer) ? m_names[aPeer] : std::string("a player");
     m_names.erase(aPeer);
     m_bodyGender.erase(aPeer);
+    m_looks.erase(aPeer);
     m_animStats.erase(aPeer);
     m_motion.erase(aPeer);
     if (const auto bridge = Bridge())
@@ -148,6 +220,9 @@ void RedGameAdapter::DriveRemotePlayer(PeerId aPeer, const RemotePose& aPose)
     pose.flags = aPose.flags;
     if (m_bodyGender.count(aPeer) && m_bodyGender[aPeer] == 1)
         pose.flags |= kFemaleFlag;
+    const auto look = m_looks.find(aPeer);
+    if (m_puppetLooks && look != m_looks.end() && look->second.own)
+        pose.flags |= kOwnLookFlag;
     pose.rate = aPose.rate;
 
     auto peer = static_cast<uint32_t>(aPeer);
@@ -156,14 +231,22 @@ void RedGameAdapter::DriveRemotePlayer(PeerId aPeer, const RemotePose& aPose)
     // Motion inputs from the pose: the body is placed, not walked, so its graph learns how it moves from these.
     // Not for a puppet on AI walking, whose own movement already drives its graph.
     bool direct = false;
-    if (m_animApply && SendsMotion() && Red::CallVirtual(bridge.instance, "IsPuppetDirect", direct, peer) && direct)
+    const bool motion = m_animApply && SendsMotion()
+                        && Red::CallVirtual(bridge.instance, "IsPuppetDirect", direct, peer) && direct;
+    if (!motion && !m_puppetLooks)
+        return;
+    const auto entity = PuppetEntity(aPeer);
+    if (motion)
     {
-        auto& motion = m_motion[aPeer];
-        const float dt = motion.Step();
-        const auto values = motion.tracker.Update(aPose.velocity, aPose.yaw, dt);
-        if (const auto entity = PuppetEntity(aPeer))
-            motion.applied += static_cast<uint64_t>(ApplyAnimInputs(entity.instance, MotionInputs(values)));
+        auto& tracker = m_motion[aPeer];
+        const float dt = tracker.Step();
+        const auto values = tracker.tracker.Update(aPose.velocity, aPose.yaw, dt);
+        if (entity)
+            tracker.applied += static_cast<uint64_t>(ApplyAnimInputs(entity.instance, MotionInputs(values)));
     }
+    // The player's look, once their body has appeared.
+    if (m_puppetLooks && entity)
+        ApplyPuppetLook(aPeer, entity);
 }
 
 void RedGameAdapter::ApplyTimeRates(const TimeRates& aRates)
@@ -387,6 +470,7 @@ void RedGameAdapter::RemoveAllPuppets()
         Red::CallVirtual(bridge.instance, "RemoveAllPuppets");
     m_names.clear();
     m_bodyGender.clear();
+    m_looks.clear();
     m_animStats.clear();
     m_motion.clear();
 }

@@ -1,10 +1,10 @@
-# 07 — Testing direct-drive puppets in the game (round O)
+# 07 — Testing direct-drive puppets in the game (round P)
 
 Remote players are shown as **the game's third-person V**, **placed every frame** at the other player's position, facing their way (no AI routing, so no AI delay), and animated with **the other player's own animation inputs**: the plugin captures what the game feeds your V's animation and sends it along ([01 §4](01-architecture.md#4-remote-players-as-entities)).
 
-Round N: the cutscene lookalike's animation graph is a cutscene graph. It already carries the third-person V animation sets, but nothing in it walks, and lending it your V's (first-person) animation sets changed nothing ([08](08-spike-results.md)). What makes the lookalike look like your V is its impostor (its "copy V" part); what makes the player body walk is its graph with the walking feature. The player body we used, `Character.TPP_Player`, is the female one; the male one exists as its own file, `player_ma_tpp.ent`. Version 0.5.10 can spawn that file directly, so this round tries **the male player body with the lookalike's impostor**.
+Round O: spawning the male player body straight from its file (`player_ma_tpp.ent`) crashed the game, because a character spawned from a bare file has no Character record ([08](08-spike-results.md)). Version 0.6 is built on CyberpunkMP's way of doing this: the body is spawned through a Character record (`Cp2077Coop.Character.PlayerBody_Male` or `_Female`), and the plugin then gives it **your look**: it marks the body third person, puts your items on it, and applies your character customization (face, hair, skin, body) the way CyberpunkMP shows other players. The animation stays ours (V's own graph: walk, run, crouch, jump).
 
-**This round is T1 and T4l** (10 minutes); the rest of the guide stays for later rounds. **No files to send:** I read the logs and dumps from your game folder; just tell me what you saw.
+**This round is T1, T4m and T5** (15 minutes); the rest of the guide stays for later rounds. **No files to send:** I read the logs and dumps from your game folder; just tell me what you saw.
 
 ---
 
@@ -27,7 +27,7 @@ Round N: the cutscene lookalike's animation graph is a cutscene graph. It alread
    xmake run coop-tests
    ```
 
-   The build ends with **`copied N mod file(s) into … (nothing deleted)`**; the tests with **`60 test(s), 0 failure(s)`**. In the game, the top of the **Direct drive** tab shows the version (`Version 0.5.10-m1v`); a `VERSION MISMATCH` line there means the old build is still installed (the new folder wasn't copied over the one you build in).
+   The build ends with **`copied N mod file(s) into … (nothing deleted)`**; the tests with **`65 test(s), 0 failure(s)`**. In the game, the top of the **Direct drive** tab shows the version (`Version 0.6.0-m1v`); a `VERSION MISMATCH` line there means the old build is still installed (the new folder wasn't copied over the one you build in).
 3. **Your `coop.ini`:** if you made one earlier (`red4ext\plugins\Cp2077Coop\coop.ini`), remove any `[puppet] recordMale/recordFemale` lines from it, so the default body is used. The build installs the new template as `coop.ini.example` next to it; its `[puppet]` and `[anim]` settings all default to the right values for this round (empty `…Input=` lines left over from an older copy now mean "the default").
 
 ## T2. Placement test: which way of placing a body moves it? (1 minute)
@@ -149,7 +149,21 @@ Send `probe-results.txt`, the newest `red4ext\logs` file, a screenshot of the Di
 
 If the game crashes during step 2, the last `dress:` line in the Log names the item that did it; start again and tell me. The **Item** / **Slot** fields and **Put this item on the mirror** put one item on the running mirror (for trying something the dressing left out).
 
-### T4l. The male player body with the impostor (round O)
+### T4m. The player body with your look (round P)
+
+The **Body** list now starts with `Cp2077Coop.Character.PlayerBody_Male` (`_Female` if your V is female). The template-path bodies of round O are gone.
+
+1. **Direct drive** tab. **Body** = `Cp2077Coop.Character.PlayerBody_…` (the first one). Ticked: **Give it my look when it appears (CyberpunkMP's method)** and the three steps under it (**mark it third person**, **my items**, **my character customization**). Unticked: **Copy my look onto it (add an impostor)**, **Lend it my animation sets**, **Switch it to third person when it appears**, **Dress it in my items when it appears (old way)**. Under the motion fields: **Also send my walking…** ticked, **Also tell it to animate as third person** unticked. **Start mirror**.
+   - **If the game crashes as the body spawns** (before the Log tab says `mirror: body appeared`): tell me; then the record itself is the problem.
+   - **If it crashes about half a second after it appears:** it's the look. The plugin writes a `look: …` line before each step into `red4ext\logs`, so I can see which one. Start the game again and try **Start mirror** with only one of the three steps ticked at a time (third person, then items, then customization), and tell me which crashes.
+2. **Note:** a man's or a woman's body, matching your V? Your face, hair, beard, skin, head? Your clothes? Headgear (a hat or helmet, if you wear one)? Then walk, run, sprint, crouch, jump: legs, arms and torso right?
+3. After about 3 seconds, click **List looks (V and mirror)** (writes `probe-looks.txt`; I read which head sits in `TppHead`).
+4. **Compare** (Stop mirror between each): untick **my character customization** → Start mirror: what is missing now? Tick it again, untick **mark it third person** → Start mirror: does the first-person head (or no head) come back? Tick it again.
+5. **Stop mirror.**
+
+Then **T5** below with fake players: their puppets are now player bodies with your look (bots send no look of their own). The panel's `body:` line reads `bodies: Cp2077Coop.Character.PlayerBody_Male / …_Female (by each player's V), with their look`, and each puppet line says `your look`.
+
+### T4l. The male player body with the impostor (round O; crashed, replaced by T4m)
 
 The **Body** list now starts with two file paths: `template:…\player_ma_tpp.ent` (the male third-person player body; `wa` if your V is female) and `template:…\player_ma_tpp_reflexion.ent` (the body the game uses for mirror reflections).
 
@@ -196,7 +210,7 @@ Fake players don't send animation inputs, so their puppets glide; this checks pl
    .\build\windows\x64\releasedbg\coop-sim.exe client --connect 127.0.0.1:27077 --bots 2 --script follow
    ```
 
-3. **Expect:** `hosting, 3 player(s)`, `Puppets: 2`, a line `body: Character.TPP_Player_Cutscene_Male (picked by your V's body)` (or `_Female`), `movement: direct, placed every frame (method auto; …)`, and per puppet `… off by 0.0x m, … DIRECT (transform): placed N times, AI off, respawns 0`.
+3. **Expect:** `hosting, 3 player(s)`, `Puppets: 2`, a line `bodies: Cp2077Coop.Character.PlayerBody_Male / Cp2077Coop.Character.PlayerBody_Female (by each player's V), with their look`, `movement: direct, placed every frame (method auto; …)`, and per puppet `player N (their V: male, your look): … off by 0.0x m, … DIRECT (transform): placed N times, AI off, respawns 0`. The puppets are player bodies of your V's gender with your look (bots send no look of their own). **Note:** do they look like your V, and does the game stay up when they appear?
 4. Walk, run, sprint and stop; the bots follow, and so do their puppets. **Note:** do the puppets stay exactly where the bots are (off by under 0.1 m) and move smoothly?
 5. **Fallback:** if transform doesn't move the body, the line changes to `DIRECT (AI teleport): … (transform failed: …)`; if that doesn't either, to `AI WALKING … (fallback 1: …)`: the bridge went back to AI walking (it tries direct drive again after 60 s, and gives up after the second time). Note what you see and click **Log puppet state**. A line `DIRECT: … AI NOT off after 6 tries (…)` means the plugin couldn't switch the AI off; the animation status then has a `puppet AI switch:` line saying why.
 6. Fast travel somewhere: after the load, the puppets should be next to you again within a few seconds.

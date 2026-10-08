@@ -83,7 +83,7 @@ Delivered with 0.5, "direct drive" (asked for instead of round E), waiting for t
 Still to do (needs spike results):
 
 - Round F results: capture, placement and animation of direct-drive puppets ([07](07-testing-guide.md)); more capture points or motion-input names as needed.
-- Each puppet showing its own player's appearance, clothing and weapon (S1c `slotIDsToOmit`, or the bare `No_Impostor` body).
+- Each puppet showing its own player's appearance, clothing and weapon. 0.6 does appearance and clothing with CyberpunkMP's method (character customization state + items + third-person flag; round P); the weapon is next.
 - Passive puppets (S2d).
 - Game side of vehicles: register V's car, spawn and drive proxies, mount puppets in seats, seat the local V as a passenger (S1v-b).
 - Dev instance mode for two instances (only if S13 shows Steam allows it).

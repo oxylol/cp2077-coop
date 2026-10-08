@@ -10,6 +10,7 @@
 #include "plugin/AnimCapture.hpp"
 #include "plugin/AnimDiagnostics.hpp"
 #include "plugin/BodySetup.hpp"
+#include "plugin/Looks.hpp"
 #include "plugin/Placement.hpp"
 #include "plugin/Plugin.hpp"
 
@@ -161,6 +162,7 @@ Red::CString CoopSystem::GetAnimStatus() const
                 + std::to_string(m_mirrorMotionApplied) + " motion input(s) applied\n";
     text += m_adapter.MotionStatus();
     text += plugin::BodySetup::Get().Status();
+    text += plugin::Looks::Get().Status();
     if (!m_lastAIError.empty())
         text += "puppet AI switch: " + m_lastAIError + "\n";
     const auto apply = m_adapter.AnimApplyStatus();
@@ -426,6 +428,51 @@ int32_t CoopSystem::GetBodyOptions() const
     return (options.addImpostor ? 1 : 0) | (options.borrowAnimsets ? 2 : 0);
 }
 
+Red::CString CoopSystem::ApplyMyLook(const Red::Handle<Red::IScriptable>& aEntity)
+{
+    if (!aEntity)
+        return Red::CString("no body");
+    // The bridge's answer about your V's body (also outside a session), so the right head goes on.
+    LocalSample sample;
+    m_adapter.CaptureLocal(sample);
+    plugin::Look look;
+    std::string error;
+    if (!plugin::Looks::Get().CaptureLocal(plugin::LocalPlayerHandle(), LocalFemale(), look, error))
+        return Red::CString(("your V's look couldn't be read: " + error).c_str());
+    auto report = plugin::Looks::Get().Apply(aEntity, look);
+    if (!error.empty())
+        report += " (reading your look: " + error + ")";
+    return Red::CString(report.c_str());
+}
+
+void CoopSystem::SetLookOptions(bool aThirdPerson, bool aItems, bool aCustomization)
+{
+    plugin::LookOptions options;
+    options.thirdPerson = aThirdPerson;
+    options.items = aItems;
+    options.customization = aCustomization;
+    plugin::Looks::Get().SetOptions(options);
+    COOP_LOG_INFO("look options: third person %s, items %s, customization %s", aThirdPerson ? "on" : "off",
+                  aItems ? "on" : "off", aCustomization ? "on" : "off");
+}
+
+int32_t CoopSystem::GetLookOptions() const
+{
+    const auto options = plugin::Looks::Get().Options();
+    return (options.thirdPerson ? 1 : 0) | (options.items ? 2 : 0) | (options.customization ? 4 : 0);
+}
+
+void CoopSystem::SetPuppetLooks(bool aOn)
+{
+    m_adapter.SetPuppetLooks(aOn);
+    COOP_LOG_INFO("puppets get their player's look: %s", aOn ? "on" : "off");
+}
+
+bool CoopSystem::GetPuppetLooks() const
+{
+    return m_adapter.PuppetLooks();
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Engine hooks
 
@@ -475,6 +522,12 @@ void CoopSystem::OnTick(Red::FrameInfo&, Red::JobQueue&)
         body.addImpostor = settings.GetBool("puppet.addImpostor", false);
         body.borrowAnimsets = settings.GetBool("puppet.borrowAnimsets", false);
         plugin::BodySetup::Get().SetOptions(body);
+        plugin::LookOptions look;
+        look.thirdPerson = settings.GetBool("look.thirdPerson", true);
+        look.items = settings.GetBool("look.items", true);
+        look.customization = settings.GetBool("look.customization", true);
+        plugin::Looks::Get().SetOptions(look);
+        m_adapter.SetPuppetLooks(settings.GetBool("look.apply", true));
         if (capture)
             plugin::AnimCapture::Get().Install();
     }
@@ -520,17 +573,13 @@ void CoopSystem::OnTick(Red::FrameInfo&, Red::JobQueue&)
 
 RED4ext::IScriptable* CoopSystem::LocalPlayer() const
 {
-    Red::ScriptGameInstance game;
-    Red::Handle<Red::IScriptable> system;
-    if (!Red::CallStatic("ScriptGameInstance", "GetPlayerSystem", system, game) || !system)
-        return nullptr;
-    Red::Handle<Red::IScriptable> player;
-    if (!Red::CallVirtual(system.instance, "GetLocalPlayerMainGameObject", player) || !player)
-    {
-        if (!Red::CallVirtual(system.instance, "GetLocalPlayerControlledGameObject", player) || !player)
-            return nullptr;
-    }
-    return player.instance; // compared by address only; the player system keeps it alive
+    // Compared by address only; the player system keeps it alive.
+    return plugin::LocalPlayerHandle().instance;
+}
+
+bool CoopSystem::LocalFemale() const
+{
+    return m_adapter.LocalFemale();
 }
 
 SessionRunner& CoopSystem::Runner()

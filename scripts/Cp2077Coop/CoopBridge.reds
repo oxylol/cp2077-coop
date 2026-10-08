@@ -7,10 +7,14 @@
 // panel (cet/coop-dev) until they are confirmed.
 //
 // Puppets ("direct drive", docs/01-architecture.md §4):
-// * Body: the game's third-person V (Character.TPP_Player_Cutscene_Male/Female), the record matching the LOCAL
-//   V's body, because only that one spawns (round C). It uses V's own animation setup, so the animation inputs
-//   the plugin captures from the remote player's V can be applied to it unchanged (src/plugin/AnimCapture.cpp).
-//   It still copies the local V's look and weapon (impostor component, S1c); per-player looks are open.
+// * Body (0.6): the player's own third-person body (Cp2077Coop.Character.PlayerBody_Male/Female,
+//   tweaks/Cp2077Coop/bodies.tweak), of the remote player's gender once their look has arrived. It has V's own
+//   animation graph, so the animation inputs the plugin captures from the remote player's V can be applied to it
+//   unchanged (src/plugin/AnimCapture.cpp). The plugin gives it the remote player's look when it appears
+//   (CyberpunkMP's method, src/plugin/Looks.cpp): their items, their character customization, third person. A
+//   player without a look of their own (a coop-sim bot) gets a body of the local V's gender and the local V's
+//   look. coop.ini [look] apply=false goes back to 0.5's body: the cutscene lookalike of the LOCAL V's gender
+//   (Character.TPP_Player_Cutscene_Male/Female), which copies the local V through its impostor (S1c).
 // * Movement: no AI routing. The body is placed every frame at the network position, facing the network yaw (the
 //   session interpolates the pose, ~0.1 s behind), through the plugin (CoopSystem.PlaceEntity). Round F showed the
 //   teleportation facility doesn't move NPCs, AI on or off, so placement methods are tried in turn: Codeware's
@@ -31,8 +35,9 @@
 public class CoopPuppetEntry {
     public let peer: Uint32;
     public let entityID: EntityID;
-    public let female: Bool;       // body record used (the local V's body, see above)
-    public let remoteFemale: Bool; // the remote player's own body, for when puppets can show it (S1b)
+    public let female: Bool;       // body record used (see PuppetFemale)
+    public let remoteFemale: Bool; // the remote player's own body
+    public let ownLook: Bool;      // the remote player sent their look (the plugin puts it on the body)
     public let spawnTime: Float;
     public let configured: Bool;
     // Direct drive: AI off, placed every frame. False = AI walking (coop.ini, or the fallback below).
@@ -84,6 +89,7 @@ public class CoopBridge extends ScriptableSystem {
     private let m_recordMaleName: String;
     private let m_recordFemaleName: String;
     private let m_localFemale: Bool;
+    private let m_applyLooks: Bool;  // coop.ini [look] apply (default on): puppets get their own player's look
     private let m_driveDirect: Bool;
     private let m_placeMethod: Int32; // coop.ini [puppet] place: 0 = auto (transform, then AI teleport)
     // Time fields.
@@ -125,16 +131,25 @@ public class CoopBridge extends ScriptableSystem {
         }
     }
 
-    // Records the puppets are spawned from: recordMale while the local V has a male body, recordFemale while it has a
-    // female one, and how they are moved. coop.ini can override them ([puppet] recordMale=..., recordFemale=...,
+    // Records the puppets are spawned from: recordMale for a male body, recordFemale for a female one (see
+    // PuppetFemale), and how they are moved. coop.ini can override them ([puppet] recordMale=..., recordFemale=...,
     // drive=direct|ai), e.g. to compare bodies without rebuilding.
     private func LoadPuppetRecords(coop: ref<CoopSystem>) -> Void {
-        // Default: the game's third-person V, which uses V's animation setup (the inputs captured from the remote
-        // V fit it). The plain NPC body of M0b is Cp2077Coop.Character.RemotePlayer (r6/tweaks/Cp2077Coop).
-        this.m_recordMale = t"Character.TPP_Player_Cutscene_Male";
-        this.m_recordMaleName = "Character.TPP_Player_Cutscene_Male";
-        this.m_recordFemale = t"Character.TPP_Player_Cutscene_Female";
-        this.m_recordFemaleName = "Character.TPP_Player_Cutscene_Female";
+        // Default: the player's own third-person body, which has V's animation graph (the inputs captured from the
+        // remote V fit it) and gets its player's look from the plugin. Without looks: the cutscene lookalike, which
+        // copies the local V. The plain NPC body of M0b is Cp2077Coop.Character.RemotePlayer (r6/tweaks/Cp2077Coop).
+        this.m_applyLooks = !this.IsOff(coop.GetSetting("look.apply"));
+        if this.m_applyLooks {
+            this.m_recordMale = t"Cp2077Coop.Character.PlayerBody_Male";
+            this.m_recordMaleName = "Cp2077Coop.Character.PlayerBody_Male";
+            this.m_recordFemale = t"Cp2077Coop.Character.PlayerBody_Female";
+            this.m_recordFemaleName = "Cp2077Coop.Character.PlayerBody_Female";
+        } else {
+            this.m_recordMale = t"Character.TPP_Player_Cutscene_Male";
+            this.m_recordMaleName = "Character.TPP_Player_Cutscene_Male";
+            this.m_recordFemale = t"Character.TPP_Player_Cutscene_Female";
+            this.m_recordFemaleName = "Character.TPP_Player_Cutscene_Female";
+        }
         let male = coop.GetSetting("puppet.recordMale");
         if StrLen(male) > 0 {
             this.m_recordMale = TDBID.Create(male);
@@ -178,7 +193,7 @@ public class CoopBridge extends ScriptableSystem {
             return;
         }
 
-        let female = this.LocalFemale();
+        let female = this.PuppetFemale(pose);
         let entry = this.FindPuppet(peer);
         if !IsDefined(entry) {
             this.SpawnPuppet(peer, pose, female);
@@ -186,13 +201,14 @@ public class CoopBridge extends ScriptableSystem {
         }
 
         entry.remoteFemale = (pose.flags & 128) != 0;
+        entry.ownLook = (pose.flags & 256) != 0;
         entry.target = pose.position;
         entry.speed = pose.speed;
         entry.rate = pose.rate;
         let now = this.Now();
 
         if NotEquals(entry.female, female) {
-            entry.lastRespawn = "your V's body changed";
+            entry.lastRespawn = entry.ownLook ? "their V's body arrived" : "your V's body changed";
             this.Respawn(entry, pose, female);
             return;
         }
@@ -395,8 +411,13 @@ public class CoopBridge extends ScriptableSystem {
     // One line per puppet for the CET panel: where the network says it should be, where it is, and how it
     // got there.
     public func GetPuppetDebug() -> String {
-        let record = this.LocalFemale() ? this.m_recordFemaleName : this.m_recordMaleName;
-        let text = s"body: \(record) (picked by your V's body)\n";
+        let text = "";
+        if this.m_applyLooks {
+            text = s"bodies: \(this.m_recordMaleName) / \(this.m_recordFemaleName) (by each player's V), with their look\n";
+        } else {
+            let record = this.LocalFemale() ? this.m_recordFemaleName : this.m_recordMaleName;
+            text = s"body: \(record) (picked by your V's body; looks off)\n";
+        }
         if this.m_driveDirect {
             let place = GameInstance.GetCoopSystem().GetPlacementMethodName(this.m_placeMethod);
             text = text + s"movement: direct, placed every frame (method \(place); falls back to AI walking if the body doesn't follow)\n";
@@ -417,7 +438,8 @@ public class CoopBridge extends ScriptableSystem {
         let now = this.Now();
         for entry in this.m_puppets {
             let theirs = entry.remoteFemale ? "female" : "male";
-            let line = s"player \(entry.peer) (their V: \(theirs)): ";
+            let look = entry.ownLook ? "their look" : "your look";
+            let line = s"player \(entry.peer) (their V: \(theirs), \(look)): ";
             if !entry.found {
                 let body = entry.female ? "female" : "male";
                 line = line + s"\(body) body not there yet, waiting \(FloatToStringPrec(now - entry.spawnTime, 0)) s";
@@ -543,6 +565,16 @@ public class CoopBridge extends ScriptableSystem {
                 entry.appliedRate = 0.0;
             }
         }
+    }
+
+    // The body a puppet gets: its own player's (bit 128 of the pose flags) when that player sent their look (bit
+    // 256) and looks are on; otherwise the local V's, which is the look it is given (impostor, or the plugin's
+    // fallback for players without a look).
+    private func PuppetFemale(pose: CoopPuppetPose) -> Bool {
+        if this.m_applyLooks && (pose.flags & 256) != 0 {
+            return (pose.flags & 128) != 0;
+        }
+        return this.LocalFemale();
     }
 
     // The local V's body; remembers the last answer while there is no V (loading screens).
@@ -745,9 +777,17 @@ public class CoopBridge extends ScriptableSystem {
         if coop.SetPuppetAI(entity, on) {
             entry.aiOff = !on;
             entry.aiNote = on ? "switched on" : "switched off";
-        } else {
-            entry.aiNote = "the plugin couldn't switch it, see the dev panel's animation status";
+            return;
         }
+        // A player body has no AI controller (round J); the plugin still switched its movement component, which is
+        // all placement needs.
+        let puppet = entity as ScriptedPuppet;
+        if IsDefined(puppet) && !IsDefined(puppet.GetAIControllerComponent()) {
+            entry.aiOff = !on;
+            entry.aiNote = "no AI controller (player body), movement component switched";
+            return;
+        }
+        entry.aiNote = "the plugin couldn't switch it, see the dev panel's animation status";
     }
 
     private func FallBackToAI(entry: ref<CoopPuppetEntry>, entity: ref<Entity>, reason: String, now: Float) -> Void {

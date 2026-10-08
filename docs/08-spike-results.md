@@ -220,12 +220,25 @@ Version 0.5.9, one game; dumps read from the game folder.
 
 **Conclusion:** the lookalike's *look* comes from its impostor, the player body's *walking* from V's graph and the `playerLocomotion` feature. Codeware's known resource paths list the male third-person player body as its own template, `base\characters\entities\player\player_ma_tpp.ent` (`Character.TPP_Player` gives the female one), and a mirror-reflection body `player_ma_tpp_reflexion.ent`. → 0.5.10 can spawn a body from a template path (`CoopSystem.SetSpawnTemplate` writes the path hash into Codeware's `DynamicEntitySpec.templatePath`); round O tries the male player body with the lookalike's impostor.
 
-(The tester relayed that CyberpunkMP's author is fine with us reading its code. Not taken up: the clean-room rule stands, and the license reportedly forbids it; a written permission from the author would be needed to revisit.)
+## Round O (October 8): template spawns crash; the project builds on CyberpunkMP
 
-## Round O (pending): the male player body with the impostor
+Version 0.5.10, one game.
 
-Steps in [07 T4l](07-testing-guide.md#t4l-the-male-player-body-with-the-impostor-round-o). Questions:
+- **Crash:** the mirror spawned as `template:…\player_ma_tpp.ent` crashed the game, and so did `…\player_ma_tpp_reflexion.ent`. Both were spawned by path (`CoopSystem.SetSpawnTemplate` → Codeware `DynamicEntitySpec.templatePath`), the only bodies of all rounds spawned without a TweakDB record.
+- **Cause** [inference, strongly supported]: Codeware turns a template spawn into a bare `SpawnableObject` record holding only the template path (`ConvertTemplateToRecord` in its `DynamicEntitySystem.cpp`), and its documentation warns "NPCs and vehicles may not function properly if spawned using template". A `PlayerPuppet` built without a Character record crashes. Every body that spawned fine (rounds A–N) came from a Character record.
+- **Decision (project owner):** the project becomes an enhancement of CyberpunkMP ([01 §1](01-architecture.md#1-foundation-cyberpunkmp), [LICENSE.md](../LICENSE.md)); its code was read for the first time. What it does for remote players:
+  - **Body:** always a Character record. Its `CyberpunkMP.tweak` has `Character.Muppet : Character.TPP_Player` with `genders` pointing at `player_wa_tpp.ent` / `player_ma_tpp.ent`, and the ones it uses, `Character.MaMuppet` / `WaMuppet`, are based on `Character.Panam` (an NPC) with its own edited copy of the cutscene lookalike template (`mods\cyberpunkmp\player_ma_tpp_cutscene.ent`, shipped in its archive).
+  - **Look:** each client serializes its character customization state (the game's own stream format, ~13 KB) and sends it with the visual items of its paper-doll slots. The receiver gives the body the items (with garment appearance names that include the `&TPP` suffix), sets a byte in the body's `gamePuppetPS` that the game checks when it resolves `&TPP` appearances, and applies the state's third-person head, face, hair, beard, body and arms parts through the world's entity appearance changer (`ScheduleSynchronizedAppearanceChanges`).
+  - **Movement:** its own movement controller on the NPC's move component, feeding the NPC locomotion feature only idle, walk and sprint (with the animation time); no crouch, jump or weapons.
+- **What this project takes** (0.6): the record-based body (male and female player templates through `genders`, `tweaks/Cp2077Coop/bodies.tweak`) and the whole look pipeline (`src/plugin/Looks.cpp`). It keeps its own animation: the player body has V's graph, which round L showed runs with the `playerLocomotion` feature, and the captured inputs add crouch, jump and weapons, which CyberpunkMP's controller doesn't have. The third-person byte is the best candidate yet for rounds K–M's first-person head swap.
+- The reflection body (`player_ma_tpp_reflexion.ent`) is dropped: it is the game's mirror-reflection double of the local V, of no use for a remote player.
 
-1. Does `player_ma_tpp.ent` spawn a male player body that walks with the `playerLocomotion` feature?
-2. With the impostor, does it look like V (face, hair, head, clothes)? Dressed instead, does it keep a head, with or without its `gameTPPRepresentationComponent`?
-3. What is the reflection body?
+## Round P (pending): the player body with your look
+
+Steps in [07 T4m](07-testing-guide.md#t4m-the-player-body-with-your-look-round-p). Questions:
+
+1. Does `Cp2077Coop.Character.PlayerBody_Male/_Female` spawn without crashing, as a body of your V's gender?
+2. With your look applied (third person, items, customization): your V's face, hair, head, body and clothes? Headgear? Does the head stay third person (`TppHead`)?
+3. Does it still walk, run, crouch and jump with you (V's graph, `playerLocomotion`)?
+4. Which of the plugin's game functions are found on 2.31 (status line `looks (CyberpunkMP): … game functions: …`), and what does the `look:` line in `red4ext/logs` report?
+5. With fake players: are their puppets player bodies with your look?

@@ -149,8 +149,8 @@ Suggested order for the first month: S13 and S1 together (they decide the whole 
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Clean-room integrity | Medium | No code from other Cyberpunk 2077 multiplayer projects is used, studied for implementation, or linked. All sync, networking and replication code is original. Contributors declare they haven't copied code from such projects; dependencies are limited to the permissively licensed libraries in [01 §1.1](01-architecture.md#11-dependencies) |
-| Project license | Low | MIT recommended (compatible with every dependency; allows GitHub and Nexus distribution) |
+| Building on CyberpunkMP | Medium | Since 0.6 the project is an enhancement of CyberpunkMP (Tilted Phoques SRL) under its license ([01 §1](01-architecture.md#1-foundation-cyberpunkmp)): stays public on GitHub, credits Tilted Phoques SRL in [LICENSE.md](../LICENSE.md), [NOTICE.md](../NOTICE.md) and every ported file, and is never uploaded to modding platforms. Its section 1.2 forbids a *competing* product; the project is a modification of CyberpunkMP, and the author was reported to be fine with it. A written confirmation from Tilted Phoques would remove the remaining doubt. Tilted Phoques may change its license (section 3) |
+| Project license | Low | The CyberpunkMP License Agreement (since 0.6; MIT before). No Nexus release; GitHub (or the authors' own site) only |
 | CDPR fan content and modding guidelines | Low if followed | Non-commercial, no game files or assets redistributed, no paywalls, clear "not affiliated with CD PROJEKT RED" notice; players must own the game (the mod runs only inside a legitimately launched game and adds no DRM bypass) |
 | Steamworks terms | Low | The Steam backend uses only the game's own `steam_api64.dll` at runtime; no Steamworks SDK files are committed or shipped |
 | Transferring the host's save to clients (join mode C) | Low | A save is player-generated state, not CDPR assets; transferred only between session members, cached locally, never published |

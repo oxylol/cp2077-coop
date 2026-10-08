@@ -2,9 +2,9 @@
 
 Story co-op for Cyberpunk 2077 (base game + Phantom Liberty) for 2–4 players, in the spirit of Elden Ring's Seamless Co-op. `Cp2077Coop` is a working name.
 
-> Not affiliated with or endorsed by CD PROJEKT RED. Every player must own the game. No game files or CDPR assets are included. Built from scratch on MIT/BSD/Apache-licensed libraries; see [docs/01-architecture.md §1](docs/01-architecture.md#1-foundation-a-clean-build).
+> **An enhancement of [CyberpunkMP](https://github.com/tiltedphoques/CyberpunkMP) by Tilted Phoques SRL**, under CyberpunkMP's license ([LICENSE.md](LICENSE.md); what was taken: [NOTICE.md](NOTICE.md)). Distributed only through GitHub, never on modding sites. Not affiliated with or endorsed by CD PROJEKT RED. Every player must own the game. No game files or CDPR assets are included. See [docs/01-architecture.md §1](docs/01-architecture.md#1-foundation-cyberpunkmp).
 
-**Status: M0b in progress, M1 started.** The networking runs on its own thread inside the game and players connect. **New in 0.5 ("direct drive"):** remote players are shown as the game's third-person V, with its AI off, placed every frame at the other player's position and facing, and animated with the animation inputs the plugin captures from the other player's V; a puppet that doesn't follow the placements falls back to AI walking by itself. In the game so far (rounds F–I): placing a body every frame works, the capture sees your V's inputs, and the player body dressed in your V's items runs and crouches with you, but stays a first-person woman's body; the cutscene lookalike has your V's whole look but a graph that can't walk; the next round tries the male player body with the lookalike's impostor ([steps](docs/07-testing-guide.md)). Sandevistan/Kerenzikov slow motion is applied in the game, and two copies of the game can play together on one PC. Vehicle sync works between the headless tools ([results so far](docs/08-spike-results.md), [roadmap](docs/06-roadmap.md)).
+**Status: M0b in progress, M1 started.** The networking runs on its own thread inside the game and players connect. Remote players are shown as the game's third-person V with its AI off, placed every frame at the other player's position and facing, and animated with the animation inputs the plugin captures from the other player's V ("direct drive", 0.5). **New in 0.6:** the project is now an enhancement of CyberpunkMP. Round O's crash (the male player body spawned from its template path) is fixed by spawning it through a Character record, the way CyberpunkMP spawns its remote players, and each puppet gets its own player's look with CyberpunkMP's method: their character customization (face, hair, body), their items, and the third-person flag that stops the body from swapping in the first-person head. The animation stays this project's (V's own graph: walk, run, crouch, jump), which goes further than CyberpunkMP's walk/sprint controller. Round P checks it in the game ([steps](docs/07-testing-guide.md)). Sandevistan/Kerenzikov slow motion is applied in the game, and two copies of the game can play together on one PC. Vehicle sync works between the headless tools ([results so far](docs/08-spike-results.md), [roadmap](docs/06-roadmap.md)).
 
 ## Design documents
 
@@ -31,9 +31,9 @@ src/net         GameNetworkingSockets transport with lanes and impairment (porta
 src/host        HostService: handshake, roster, relay (portable)
 src/client      ClientSession: one player's side of a session (portable)
 src/tools/sim   coop-sim: headless host and scripted fake players
-src/plugin      RED4ext plugin (Windows): CoopSystem game system, script bridge adapter, animation capture
+src/plugin      RED4ext plugin (Windows): CoopSystem game system, script bridge adapter, animation capture, looks
 scripts/        redscript bridge  -> r6/scripts/Cp2077Coop
-tweaks/         TweakXL records   -> r6/tweaks/Cp2077Coop
+tweaks/         TweakXL records (bodies, plain NPC) -> r6/tweaks/Cp2077Coop
 cet/coop-dev    CET dev panel: host/join, mirror test, animation tools, probes (development only)
 config/         coop.ini template
 tests/          unit tests and loopback integration tests
@@ -108,14 +108,15 @@ Step by step in [docs/07-testing-guide.md](docs/07-testing-guide.md). In short:
 
 | Test | What to check |
 |---|---|
-| Male player body + impostor (T4l) | Does it look like your V and walk with you? |
+| Player body with your look (T4m) | Does it spawn without crashing? Does it look like your V (face, hair, head, body, clothes) and walk, run, crouch and jump with you? |
+| Fake players (T5) | Their puppets are player bodies with your look, placed where the bots are |
 
-Results so far (rounds A–N; round E was skipped): [docs/08-spike-results.md](docs/08-spike-results.md).
+Results so far (rounds A–O; round E was skipped): [docs/08-spike-results.md](docs/08-spike-results.md).
 
 ## What is and isn't verified
 
 - **In the game (your tests, 2026-10-07 and 08):** the plugin builds with Visual Studio and loads on 2.31; hosting works, fake players join from another process, clock sync works, the script bridge loads and spawns puppets. A spawned NPC walks with AI move commands; a V-lookalike record exists; spawned cars can be moved by teleport and NPCs seated in them; the game's slow motion follows a bot's Sandevistan with V exempt during V's own ([details](docs/08-spike-results.md)). Direct drive (rounds F–I): a placed body follows every frame with its movement component off; the capture sees your V's inputs; the player body animates with them. The player body dressed in your V's items runs and crouches with you (rounds K–L). Not yet seen: a body that both looks fully like your V and animates, and puppets between two games.
-- **Portable code:** 60 tests pass on Linux (repeated runs, also with every CPU core busy). They cover real UDP sessions, animation inputs (codec, relay with events exactly once, late joiners, motion values), the network thread (the game adapter is only called on the main thread; a 3 s main-thread freeze keeps the session alive), vehicle sync and time fields on a deterministic in-memory network (seats, handoff, stale epochs, forged spawns, players leaving, late joiners; slow-motion rates identical on every machine, real slowed movement, proportional overlaps, easing in and out of range, world clocks agreeing exactly). AddressSanitizer and UndefinedBehaviorSanitizer find no errors (one clock-sync timing check can miss its tolerance under their slowdown). ThreadSanitizer finds no races in our code; its remaining reports are inside GameNetworkingSockets, which isn't built for it. How to run them: [docs/09](docs/09-development-handoff.md) §6.
+- **Portable code:** 65 tests pass on Linux (repeated runs, also with every CPU core busy). They cover real UDP sessions, animation inputs (codec, relay with events exactly once, late joiners, motion values), the network thread (the game adapter is only called on the main thread; a 3 s main-thread freeze keeps the session alive), vehicle sync and time fields on a deterministic in-memory network (seats, handoff, stale epochs, forged spawns, players leaving, late joiners; slow-motion rates identical on every machine, real slowed movement, proportional overlaps, easing in and out of range, world clocks agreeing exactly). AddressSanitizer and UndefinedBehaviorSanitizer find no errors (one clock-sync timing check can miss its tolerance under their slowdown). ThreadSanitizer finds no races in our code; its remaining reports are inside GameNetworkingSockets, which isn't built for it. How to run them: [docs/09](docs/09-development-handoff.md) §6.
 - **Across processes:** a host with three simulated players ran with the "typical" network preset (about 120 ms ping); a driving host plus a riding client shared a car with matching positions on both sides; a client bot's Sandevistan slowed the host's bot and its neighbour to x0.25 while a far player stayed at normal speed.
 - **CI:** `.github/workflows/ci.yml` builds and tests on Linux and Windows on every push and uploads the built mod; it runs once the repository is on GitHub (not run yet).
 - **Plugin:** compiles against the real RED4ext.SDK and RedLib headers (`tools/plugin-check/check.sh` on Linux, MSVC on your PC). The animation capture builds with MSVC and runs in the game (round H); the body setup of 0.5.5 runs (Codeware callback registered, round J).
@@ -123,4 +124,4 @@ Results so far (rounds A–N; round E was skipped): [docs/08-spike-results.md](d
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+A modification of CyberpunkMP (Tilted Phoques SRL), under the CyberpunkMP License Agreement: see [LICENSE.md](LICENSE.md) and [NOTICE.md](NOTICE.md). In short: it stays public, credits Tilted Phoques SRL, and is distributed only through GitHub or the authors' own site, never through modding platforms.

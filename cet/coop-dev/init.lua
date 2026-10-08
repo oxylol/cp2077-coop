@@ -38,7 +38,10 @@ local panel = {
     motion = { speed = "speed_horizontal+desired_speed_horizontal", direction = "move_direction", vertical = "speed_vertical",
         turn = "rotation_speed_yaw", moving = "" },
     addImpostor = false,   -- body setup for bodies spawned afterwards (CoopSystem.SetBodyOptions)
-    mirrorDress = true,    -- put your V's slot items on the mirror when it appears (round K)
+    mirrorDress = false,   -- put your V's slot items on the mirror when it appears (round K; the look below does it)
+    mirrorLook = true,     -- give the mirror your look when it appears (CyberpunkMP's method, CoopSystem.ApplyMyLook)
+    look = { tpp = true, items = true, custom = true }, -- its steps (CoopSystem.SetLookOptions; synced from the plugin)
+    puppetLooks = true,    -- puppets get their own player's look (CoopSystem.SetPuppetLooks; synced)
     mirrorTpp = false,     -- switch the mirror's TPP representation on when it appears (round M: no effect)
     dressItem = "Items.PlayerMaTppHead",
     dressSlot = "AttachmentSlots.TppHead",
@@ -50,7 +53,7 @@ local panel = {
 local impairments = { "none", "lan", "good", "typical", "bad", "awful" }
 -- Keep equal to kVersionString in src/core/Version.hpp; the Direct drive tab warns when the plugin differs
 -- (an old build still installed).
-local PANEL_VERSION = "0.5.10-m1v"
+local PANEL_VERSION = "0.6.0-m1v"
 local atan2 = math.atan2 or math.atan
 
 -- ---------------------------------------------------------------------------------------------------
@@ -169,16 +172,21 @@ local function lookalikeRecord()
     return "Character.TPP_Player_Cutscene_" .. localGender()
 end
 
+-- The player's own third-person body matching your V (tweaks/Cp2077Coop/bodies.tweak): male or female template,
+-- spawned through a Character record the way CyberpunkMP spawns its remote players. Round O spawned the templates
+-- by path instead, and the game crashed (a PlayerPuppet without a Character record).
+local function playerBodyRecord()
+    return "Cp2077Coop.Character.PlayerBody_" .. localGender()
+end
+
 -- Bodies the mirror can be. Round I: the PlayerPuppet bodies (TPP_Player, photo mode, replacer) use V's own
 -- animation graph and animate with V's inputs but show only a neck; the cutscene lookalike looks like V but its
--- graph doesn't take them. The body setup (impostor, V's graph) tries to get both.
+-- graph doesn't take them. Round P: the player body of your V's gender, given your look by the plugin (CyberpunkMP's
+-- method: character customization, items, third-person flag).
 local function mirrorBodies()
     local gender = localGender()
-    local short = gender == "Female" and "wa" or "ma"
     return {
-        -- Round N: the player's own third-person templates (Character.TPP_Player spawns the female one).
-        "template:base\\characters\\entities\\player\\player_" .. short .. "_tpp.ent",
-        "template:base\\characters\\entities\\player\\player_" .. short .. "_tpp_reflexion.ent",
+        playerBodyRecord(),
         "Character.TPP_Player",
         "Character.TPP_Player_Cutscene_" .. gender,
         "Character.Player_Puppet_Photomode",
@@ -295,18 +303,8 @@ local function startMirror()
     local anchor = flatForward()
     local target = mirrorTarget(anchor)
     local spec = DynamicEntitySpec.new()
-    local templatePath = string.match(record, "^template:(.+)$")
-    if templatePath then
-        local system = coopSystem()
-        if not has(system, "SetSpawnTemplate") then
-            return "the plugin's SetSpawnTemplate is not reachable (old plugin build?)"
-        end
-        if not system:SetSpawnTemplate(spec, templatePath) then
-            return "SetSpawnTemplate failed for " .. templatePath .. " (see red4ext/logs)"
-        end
-    else
-        spec.recordID = TweakDBID.new(record)
-    end
+    -- Always a record: a character spawned from a bare template path crashes the game (round O).
+    spec.recordID = TweakDBID.new(record)
     spec.position = target
     spec.orientation = Game.GetPlayer():GetWorldOrientation()
     spec.alwaysSpawned = true
@@ -354,6 +352,21 @@ local function forgetMirror(reason)
 end
 
 local dressLikeMe -- the looks tools below (defined after the mirror code, used when the mirror appears)
+
+-- Your V's look on a body, done by the plugin the way CyberpunkMP does it (src/plugin/Looks.cpp): the body is
+-- marked third person, gets your items, and your character customization (face, hair, body). The plugin logs each
+-- step in red4ext/logs before it runs.
+local function giveMyLook(entity)
+    if not entity then
+        return "start the mirror first"
+    end
+    local system = coopSystem()
+    if not has(system, "ApplyMyLook") then
+        return "the plugin's ApplyMyLook is not reachable (old plugin build?)"
+    end
+    log("look: ApplyMyLook(mirror)")
+    return system:ApplyMyLook(entity)
+end
 
 -- The player body's third-person switch (round M). A spawned player body behaves as if it were first person: it
 -- swaps the third-person head for the first-person one (no head, no headgear), its upper body moves like the
@@ -448,6 +461,9 @@ local function updateMirror()
             later(panel.mirrorTpp and 1.2 or 0.5, "dress the mirror like you", function()
                 return dressLikeMe(mirrorEntity())
             end)
+        end
+        if panel.mirrorLook then
+            later(0.5, "give the mirror your look", function() return giveMyLook(mirrorEntity()) end)
         end
     end
 
@@ -1345,8 +1361,37 @@ local function drawDirectDrive()
             tostring(panel.addImpostor), tostring(panel.borrowAnimsets)),
             function() system:SetBodyOptions(panel.addImpostor, panel.borrowAnimsets) end)
     end
+    -- Looks (round P): CyberpunkMP's method, done by the plugin.
+    if not panel.lookSynced and has(system, "GetLookOptions") then
+        local options = tonumber(system:GetLookOptions()) or 7
+        panel.look = { tpp = options % 2 == 1, items = math.floor(options / 2) % 2 == 1,
+            custom = math.floor(options / 4) % 2 == 1 }
+        panel.puppetLooks = system:GetPuppetLooks() == true
+        panel.lookSynced = true
+    end
+    panel.mirrorLook = ImGui.Checkbox("Give it my look when it appears (CyberpunkMP's method)", panel.mirrorLook)
+    local tppChanged, itemsChanged, customChanged
+    panel.look.tpp, tppChanged = ImGui.Checkbox("  mark it third person", panel.look.tpp)
+    panel.look.items, itemsChanged = ImGui.Checkbox("  my items", panel.look.items)
+    panel.look.custom, customChanged = ImGui.Checkbox("  my character customization (face, hair, body)",
+        panel.look.custom)
+    if (tppChanged or itemsChanged or customChanged) and has(system, "SetLookOptions") then
+        try(string.format("look steps: third person %s, items %s, customization %s", tostring(panel.look.tpp),
+            tostring(panel.look.items), tostring(panel.look.custom)),
+            function() system:SetLookOptions(panel.look.tpp, panel.look.items, panel.look.custom) end)
+    end
+    if ImGui.Button("Give it my look now") then
+        try("give the mirror your look", function() return giveMyLook(mirrorEntity()) end)
+    end
+    local puppetLooksChanged
+    panel.puppetLooks, puppetLooksChanged = ImGui.Checkbox("Puppets get their player's look (their bodies: coop.ini [look] apply, at load)",
+        panel.puppetLooks)
+    if puppetLooksChanged and has(system, "SetPuppetLooks") then
+        try("puppet looks " .. (panel.puppetLooks and "on" or "off"),
+            function() system:SetPuppetLooks(panel.puppetLooks) end)
+    end
     panel.mirrorTpp = ImGui.Checkbox("Switch it to third person when it appears", panel.mirrorTpp)
-    panel.mirrorDress = ImGui.Checkbox("Dress it in my items when it appears", panel.mirrorDress)
+    panel.mirrorDress = ImGui.Checkbox("Dress it in my items when it appears (old way)", panel.mirrorDress)
     if ImGui.Button("Switch it to third person now") then
         try("switch the mirror to third person", switchToTpp)
     end

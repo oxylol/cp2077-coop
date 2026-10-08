@@ -10,6 +10,7 @@
 
 #include "client/GameAdapter.hpp"
 #include "core/AnimMotion.hpp"
+#include "plugin/Looks.hpp"
 
 namespace coop::plugin
 {
@@ -58,6 +59,12 @@ public:
     // Removes every puppet (leaving a session, or the session ending).
     void RemoveAllPuppets();
 
+    // Looks (src/plugin/Looks.hpp): each puppet gets its own player's look once its body appears. A player who
+    // sent none (a coop-sim bot) gets the local V's, on a body of the local V's gender.
+    void SetPuppetLooks(bool aOn) { m_puppetLooks = aOn; }
+    [[nodiscard]] bool PuppetLooks() const { return m_puppetLooks; }
+    [[nodiscard]] bool LocalFemale() const { return m_localFemale; }
+
     [[nodiscard]] const std::string& LastStatus() const { return m_lastStatus; }
 
 private:
@@ -66,6 +73,20 @@ private:
     Red::WeakHandle<Red::IScriptable> m_bridge;
     std::map<PeerId, std::string> m_names;
     std::map<PeerId, uint8_t> m_bodyGender;
+
+    // Each remote player's look, and which of their bodies has it.
+    struct PuppetLook
+    {
+        Look look;
+        bool own = false;            // sent by that player (else the local V's is used)
+        uint64_t appliedTo = 0;      // entity hash of the body that has it (0 = none yet)
+        uint64_t seenEntity = 0;     // the body seen last, and since when
+        std::chrono::steady_clock::time_point seenSince;
+    };
+    void ApplyPuppetLook(PeerId aPeer, const Red::Handle<Red::IScriptable>& aEntity);
+    std::map<PeerId, PuppetLook> m_looks;
+    bool m_puppetLooks = true;
+    Look m_localLook; // the last one captured for the appearance message
     std::string m_lastStatus;
     TimeRates m_timeRates;
     bool m_warnedCapture = false;

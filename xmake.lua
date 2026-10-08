@@ -10,7 +10,7 @@
 -- The game plugin builds on Windows only and needs the vendored SDKs (tools/dev/bootstrap.ps1).
 
 set_project("Cp2077Coop")
-set_version("0.5.10")
+set_version("0.6.0")
 set_xmakever("2.8.5")
 
 set_languages("cxx20")
@@ -109,6 +109,8 @@ if is_plat("windows") then
                   path.join(package, "r6", "scripts", "Cp2077Coop"))
             os.mkdir(path.join(package, "r6", "tweaks", "Cp2077Coop"))
             os.cp(path.join(os.projectdir(), "tweaks", "Cp2077Coop", "*.yaml"),
+                  path.join(package, "r6", "tweaks", "Cp2077Coop"))
+            os.cp(path.join(os.projectdir(), "tweaks", "Cp2077Coop", "*.tweak"),
                   path.join(package, "r6", "tweaks", "Cp2077Coop"))
             local cet = path.join(package, "bin", "x64", "plugins", "cyber_engine_tweaks", "mods", "coop-dev")
             os.mkdir(cet)

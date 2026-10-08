@@ -66,7 +66,9 @@ public:
     // coop.ini [puppet] place: 0 auto, or a fixed method.
     int32_t GetPlacementMethod() const;
     Red::CString GetPlacementMethodName(int32_t aMethod) const;
-    // Points a Codeware DynamicEntitySpec at an entity template by its path (instead of a TweakDB record).
+    // Points a Codeware DynamicEntitySpec at an entity template by its path (instead of a TweakDB record). Not for
+    // characters: a PlayerPuppet or NPC spawned from a bare template has no Character record and crashes the game
+    // (round O); they get records (tweaks/Cp2077Coop/bodies.tweak).
     bool SetSpawnTemplate(const Red::Handle<Red::IScriptable>& aSpec, const Red::CString& aPath);
     // Switches every component of this class (e.g. "moveComponent") on or off; returns how many, -1 on error.
     int32_t SetEntityComponents(const Red::Handle<Red::IScriptable>& aEntity, const Red::CString& aClassName,
@@ -89,6 +91,16 @@ public:
     void SetBodyOptions(bool aAddImpostor, bool aBorrowAnimsets);
     // The current body options: 1 = add impostor, 2 = borrow animation sets.
     int32_t GetBodyOptions() const;
+    // Your V's look on a body (CyberpunkMP's method, src/plugin/Looks.hpp): third-person flag, your items, your
+    // character customization. Returns what was done.
+    Red::CString ApplyMyLook(const Red::Handle<Red::IScriptable>& aEntity);
+    // Which steps looks use, for the mirror and for puppets from then on.
+    void SetLookOptions(bool aThirdPerson, bool aItems, bool aCustomization);
+    // 1 = third person, 2 = items, 4 = customization.
+    int32_t GetLookOptions() const;
+    // Whether puppets get their own player's look (coop.ini [look] apply).
+    void SetPuppetLooks(bool aOn);
+    bool GetPuppetLooks() const;
 
     // --- engine ---
     void OnRegisterUpdates(Red::UpdateRegistrar* aRegistrar) override;
@@ -102,6 +114,8 @@ private:
     void ShutdownSession(const std::string& aReason);
     // The local V from the player system (nullptr while there is none).
     RED4ext::IScriptable* LocalPlayer() const;
+    // Whether the local V has a female body (the bridge's last answer).
+    bool LocalFemale() const;
 
     coop::SteadyClock m_clock; // declared before the runner, which keeps a reference to it
     coop::plugin::RedGameAdapter m_adapter;
@@ -159,6 +173,11 @@ RTTI_DEFINE_CLASS(Coop::CoopSystem, {
     RTTI_METHOD(OnBodyInitialize);
     RTTI_METHOD(SetBodyOptions);
     RTTI_METHOD(GetBodyOptions);
+    RTTI_METHOD(ApplyMyLook);
+    RTTI_METHOD(SetLookOptions);
+    RTTI_METHOD(GetLookOptions);
+    RTTI_METHOD(SetPuppetLooks);
+    RTTI_METHOD(GetPuppetLooks);
     RTTI_METHOD(PlaceEntity);
     RTTI_METHOD(GetPlacementError);
     RTTI_METHOD(GetPlacementMethod);

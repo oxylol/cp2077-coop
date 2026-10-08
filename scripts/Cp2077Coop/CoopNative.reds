@@ -71,7 +71,8 @@ public native class CoopSystem extends IGameSystem {
     // coop.ini [puppet] place: 0 = auto, or a fixed method.
     public native func GetPlacementMethod() -> Int32
     public native func GetPlacementMethodName(method: Int32) -> String
-    // Points a Codeware DynamicEntitySpec at an entity template by its path (instead of a TweakDB record).
+    // Points a Codeware DynamicEntitySpec at an entity template by its path (instead of a TweakDB record). Not for
+    // characters: spawned from a bare template they crash the game (round O); they need a Character record.
     public native func SetSpawnTemplate(spec: ref<IScriptable>, path: String) -> Bool
     // Switches every component of this class on or off; returns how many, -1 on error.
     public native func SetEntityComponents(entity: ref<IScriptable>, className: String, enabled: Bool) -> Int32
@@ -82,6 +83,16 @@ public native class CoopSystem extends IGameSystem {
     public native func SetBodyOptions(addImpostor: Bool, borrowAnimsets: Bool)
     // The current body options: 1 = add impostor, 2 = borrow animation sets.
     public native func GetBodyOptions() -> Int32
+    // Your V's look on a body (CyberpunkMP's method): third-person flag, your items, your character customization.
+    // Returns what was done.
+    public native func ApplyMyLook(entity: ref<IScriptable>) -> String
+    // Which of those steps run, for the mirror and for puppets from then on.
+    public native func SetLookOptions(thirdPerson: Bool, items: Bool, customization: Bool)
+    // 1 = third person, 2 = items, 4 = customization.
+    public native func GetLookOptions() -> Int32
+    // Whether puppets get their own player's look (coop.ini [look] apply).
+    public native func SetPuppetLooks(on: Bool)
+    public native func GetPuppetLooks() -> Bool
     // Graph input names for the motion values worked out from each puppet's pose; "" = not sent; "-name" negates.
     public native func SetMotionInputs(speed: String, direction: String, verticalSpeed: String, turnRate: String, moving: String)
     // The five names in use, comma-separated in that order.

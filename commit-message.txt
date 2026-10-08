@@ -1,3 +1,72 @@
+Cp2077Coop 0.6.0: build on CyberpunkMP; record bodies with each player's look
+
+Round O (0.5.10): the male player body spawned by template path
+(player_ma_tpp.ent) and the mirror-reflection body crashed the game.
+Codeware turns DynamicEntitySpec.templatePath into a bare
+SpawnableObject record, and a PlayerPuppet built without a Character
+record crashes ("NPCs and vehicles may not function properly if
+spawned using template", Codeware's documentation).
+
+Decision (project owner): Cp2077Coop is now an enhancement of
+CyberpunkMP (Tilted Phoques SRL). The clean-room rule is gone; the
+project is under CyberpunkMP's license.
+
+License
+- LICENSE (MIT) replaced by LICENSE.md: the CyberpunkMP License
+  Agreement, with this project's attribution and its terms (public,
+  credits Tilted Phoques SRL, GitHub or own site only, never modding
+  platforms). NOTICE.md lists what was taken and from where.
+
+Bodies (crash fix, CyberpunkMP's pattern)
+- tweaks/Cp2077Coop/bodies.tweak: Cp2077Coop.Character.PlayerBody_Male
+  and _Female, Character records based on Character.TPP_Player with one
+  genders entry each (player_ma_tpp.ent / player_wa_tpp.ent), like
+  CyberpunkMP's Character.Muppet. Packaged with the .yaml tweaks.
+- Dev panel: the mirror body list starts with the record of your V's
+  gender; the template-path bodies and the reflection body are gone;
+  the mirror is always spawned from a record.
+
+Looks (ported from CyberpunkMP's AppearanceSystem)
+- src/plugin/Looks.*: capture the local V's look (items in its look
+  slots; character customization state serialized with the game's own
+  stream function) and apply a look to a body: the third-person byte
+  in its gamePuppetPS, the items (TransactionSystem natives through
+  RTTI, optional parameters filled, garment appearance name computed
+  as CyberpunkMP does), and the customization's third-person head,
+  face, hair, beard, body and arms parts through the world's entity
+  appearance changer. Engine addresses are resolved without RED4ext's
+  terminate-on-failure; offsets from CyberpunkMP's patch-2.2 code are
+  checked by class (SEH-guarded) before use; each step logs first.
+- core/LookItems.hpp: items as slot:item TweakDBIDs in the appearance
+  message's equipment; first-person head -> third-person head of the
+  body's gender. 5 new tests.
+- Puppets: GetLocalAppearance sends bodyGender, the customization
+  state and the items (PlayerAppearance 0x0302, unchanged); each
+  puppet gets its player's look 0.5 s after its body appears; a new
+  look respawns the body; bots without a look get the local V's.
+  The bridge spawns the player body of the remote player's gender
+  (pose flag 0x100 = own look) and counts a body without an AI
+  controller (player bodies) as switched.
+- Natives: ApplyMyLook, SetLookOptions/GetLookOptions,
+  SetPuppetLooks/GetPuppetLooks; status in GetAnimStatus.
+- coop.ini [look] apply, thirdPerson, items, customization (all true);
+  with apply=false the 0.5 lookalike bodies come back.
+- Dev panel: "Give it my look when it appears (CyberpunkMP's method)"
+  with its three steps, "Give it my look now", "Puppets get their
+  player's look"; dressing (old way) off by default.
+- Kept this project's animation (V's own graph + playerLocomotion +
+  captured inputs: walk, run, crouch, jump), which goes further than
+  CyberpunkMP's idle/walk/sprint controller.
+
+Docs: 01 section 1 (foundation: CyberpunkMP) and 4, 04 risks, 06, 07
+(round P: T4m, T5), 08 (round O results, round P questions), 09
+(rules, status, looks path, settings, next steps, gotchas), README,
+docs/README. Version 0.6.0.
+
+Checks: 65 tests; reds-check 0 problems; plugin-check all 10 files;
+dev panel parses.
+
+---- 0.5.10 ----
 Cp2077Coop 0.5.10: spawn the male player body by template path
 
 Round N (0.5.9): the cutscene lookalike carries third-person V
@@ -331,5 +400,3 @@ Rules
   before each risky call); only confirmed calls go into CoopBridge.reds,
   unconfirmed ones go through the plugin.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_012ZFP34SBZK3augWiBG7J9n
