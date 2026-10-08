@@ -1,0 +1,23 @@
+# xmake
+.xmake/
+build/
+vsxmake*/
+compile_commands.json
+
+# IDEs
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Local test output
+probe-results.txt
+probe-*.txt
+client-id*.txt
+
+# Build objects
+*.obj
+*.o
+
+# redscript checker checkout (tools/reds-check)
+.reds-check/

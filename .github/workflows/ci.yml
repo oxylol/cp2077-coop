@@ -1,0 +1,82 @@
+# Builds everything and runs the tests on every push and pull request.
+# Windows also builds the game plugin and uploads the assembled mod (build/package) as an artifact.
+# No game files are needed or used.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Cache xmake packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.xmake/packages
+          key: xmake-packages-linux-${{ hashFiles('xmake.lua') }}
+
+      - name: Configure
+        run: xmake f -m releasedbg -y
+
+      - name: Build
+        run: xmake -y
+
+      - name: Test
+        run: xmake run coop-tests
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # vendor/ SDKs, if they were committed as submodules (tools/dev/bootstrap.ps1)
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Fetch pinned SDKs (if not committed as submodules)
+        shell: pwsh
+        run: |
+          $modules = @(
+            @{ Path = "vendor/RED4ext.SDK"; Url = "https://github.com/WopsS/RED4ext.SDK.git";     Commit = "ad7277714ad30d6885d7050c5ba24fa0102f6920" },
+            @{ Path = "vendor/RedLib";      Url = "https://github.com/psiberx/cp2077-red-lib.git"; Commit = "6822105d15d1b8bd1e6aae5e57827835e585cfe8" }
+          )
+          foreach ($m in $modules) {
+            if (-not (Test-Path (Join-Path $m.Path "include"))) {
+              git clone --quiet $m.Url $m.Path
+              git -C $m.Path checkout --quiet $m.Commit
+            }
+          }
+
+      - name: Cache xmake packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\.xmake\packages
+          key: xmake-packages-windows-${{ hashFiles('xmake.lua') }}
+
+      - name: Configure
+        run: xmake f -p windows -a x64 -m releasedbg -y
+
+      - name: Build
+        run: xmake -y
+
+      - name: Test
+        run: xmake run coop-tests
+
+      - name: Upload the assembled mod
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cp2077Coop-mod
+          path: build/package
+          if-no-files-found: error

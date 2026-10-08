@@ -1,0 +1,7 @@
+# Remote-player puppet record (TweakXL). See docs/01-architecture.md §4.
+#
+# M0a placeholder: a generic humanoid NPC that is known to spawn through Codeware's DynamicEntitySystem.
+# Spike S1 picks the real base (a third-person player body that can take a character-customization
+# state) and adds the attitude group, hit capsules and interactions; only $base should need changing.
+Cp2077Coop.Character.RemotePlayer:
+  $base: Character.spr_animals_bouncer1_ranged1_omaha_mb
