@@ -26,18 +26,21 @@ engine calls `code/client/App/World/CoopNative.cpp`, customization lookup `code/
 
 ## Build (Windows)
 
-Requirements: Visual Studio 2022 (C++ workload; Windows SDK below 10.0.26100), [xmake](https://xmake.io), git,
-.NET 9 SDK and .NET 8 runtime, Node.js with pnpm (the Emote plugin's web widget).
+Requirements: Visual Studio 2022 (C++ workload), a Windows SDK **below 10.0.26100** (VS Installer → Individual
+components → "Windows 11 SDK (10.0.22621.0)"), [xmake](https://xmake.io), git, .NET 9 SDK and .NET 8 runtime,
+Node.js with pnpm (the Emote plugin's web widget).
 
 ```powershell
 git submodule update --init
-xmake f -m debug --game="C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe"
+xmake f -c -m releasedbg --vs_sdkver=10.0.22621.0 --game="C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe" -y
 xmake build Server.Loader      # server + plugins (CoopSystem, EmoteSystem, JobSystem)
 xmake build Cyberpunk2077      # client; links CyberpunkMP.dll into red4ext\plugins\zzzCyberpunkMP
 ```
 
-In debug builds the game loads the scripts, tweaks and archives straight from `code/assets`, so a script change
-needs no rebuild, only a game restart.
+`releasedbg` is what upstream's CI builds; `-c` throws away an earlier configuration (e.g. a failed `debug` one).
+The first run builds the libraries (protobuf, abseil, GameNetworkingSockets…) and takes a while. In `releasedbg`
+and `debug` builds the game loads the scripts, tweaks and archives straight from `code/assets`, so a script change
+needs no rebuild, only a game restart. `release` builds load them from the installed package.
 
 Game mods required: [RED4ext](https://github.com/WopsS/RED4ext/releases),
 [redscript](https://github.com/jac3km4/redscript/releases), [Codeware](https://github.com/psiberx/cp2077-codeware/releases),

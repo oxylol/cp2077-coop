@@ -16,7 +16,8 @@ rule("archive")
     end)
 
 target("Archives")
-    if is_mode("debug") then
+    -- debug and releasedbg (development) builds load the assets from the repository; release ones from the package.
+    if not is_mode("release") then
         add_defines("TP_ARCHIVES_LOCATION=\"../../../../code/assets/Archives/packed/archive/pc/mod/\"", {public = true})
     else 
         add_defines("TP_ARCHIVES_LOCATION=\"assets/Archives\"", {public = true})
