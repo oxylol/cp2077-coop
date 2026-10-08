@@ -1,22 +1,3 @@
-# License
-
-**Cp2077Coop is a modification of [CyberpunkMP](https://github.com/tiltedphoques/CyberpunkMP), created by
-Tilted Phoques SRL ([tiltedphoques.com](https://tiltedphoques.com)).** It builds on CyberpunkMP's approach and
-contains code ported from it (marked at the top of each file that does; see [NOTICE.md](NOTICE.md)). As the
-CyberpunkMP license requires (section 1.3), this modification is:
-
-- made publicly available, under the same terms as the CyberpunkMP License Agreement, reproduced in full below;
-- attributed to Tilted Phoques SRL as the original creator of CyberpunkMP;
-- distributed **only** through this GitHub repository or the authors' own website, **never** through third-party
-  modding platforms (Nexus Mods and the like).
-
-Wherever the agreement below says "the Software", read CyberpunkMP and this modification of it. Third-party
-libraries keep their own licenses (RED4ext.SDK, RedLib: MIT; GameNetworkingSockets: BSD-3-Clause; see
-[docs/01-architecture.md §1.1](docs/01-architecture.md#11-dependencies)). Cyberpunk 2077 and all its assets are the
-property of CD PROJEKT RED; none are included here.
-
----
-
 # License Agreement for CyberpunkMP
 
 **Organization:** Tilted Phoques SRL  
