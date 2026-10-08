@@ -35,6 +35,15 @@ add_requires(
     "entt v3.16.0",
     "microsoft-gsl v4.2.2")
 
+-- GameNetworkingSockets v1.6.0 is built with CMake in Release unless asked otherwise. In a debug build the packages
+-- get the debug runtime (/MDd, which defines _DEBUG), and GNS's headers then stop with "Cannot define both NDEBUG
+-- and _DEBUG", so it is built in Debug there. Its recipe also asks for the newest protobuf and abseil, which put a
+-- second protobuf (36.x) and abseil next to the pinned ones above; it gets the same versions instead. ICE (P2P
+-- connections through NAT) isn't used.
+add_requireconfs("gamenetworkingsockets", {configs = {debug = is_mode("debug"), ice = false}})
+add_requireconfs("gamenetworkingsockets.protobuf-cpp", {override = true, version = "29.3"})
+add_requireconfs("gamenetworkingsockets.abseil", {override = true, version = "20250127.0"})
+
 if is_plat("windows") then
     set_arch("x64")
     add_cxflags("/bigobj")

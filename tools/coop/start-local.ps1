@@ -7,7 +7,7 @@
 param(
     [string]$Game = "C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe",
     [ValidateSet("debug", "releasedbg", "release")]
-    [string]$Mode = "debug",
+    [string]$Mode = "releasedbg",
     [int]$Port = 11778,
     [string[]]$Names = @("Host", "Guest"),
     [int]$DelayBetweenGames = 25,
@@ -25,7 +25,7 @@ if (!(Test-Path $Game)) {
 if (-not $NoServer) {
     $server = Join-Path $build "Server.Loader.exe"
     if (!(Test-Path $server)) {
-        throw "No server at '$server'. Build it first: xmake f -m $Mode; xmake build Server.Loader"
+        throw "No server at '$server'. Build it first (README.md): xmake f -c -m $Mode --vs_sdkver=10.0.22621.0 -y; xmake build Server.Loader"
     }
     # Release servers refuse to start without admin credentials for their web API; local test values.
     $env:CYBERPUNKMP_ADMIN_USERNAME = "admin"
