@@ -32,10 +32,6 @@ public class ItemData extends IScriptable {
     public let m_entry: ShopEntry;
 }
 
-public class EmoteData extends IScriptable {
-    public let m_name: String;
-}
-
 public func CreateInputHint(label: CName, action: CName, hold: Bool) -> InputHintData {
     let data: InputHintData;
     data.source = n"CyberpunkMP";

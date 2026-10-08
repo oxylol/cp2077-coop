@@ -63,7 +63,7 @@ request (`/api`) to the backend on `http://localhost:11778`.
 
 ### Create a widget for a plugin
 
-TBD, see `code/server/admin/scripting/EmoteSystem/Admin`.
+TBD.
 
 ## Production
 You can manually build the webapp using `pnpm build`. It will output the build

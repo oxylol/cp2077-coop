@@ -27,13 +27,13 @@ engine calls `code/client/App/World/CoopNative.cpp`, customization lookup `code/
 ## Build (Windows)
 
 Requirements: Visual Studio 2022 (C++ workload), a Windows SDK **below 10.0.26100** (VS Installer → Individual
-components → "Windows 11 SDK (10.0.22621.0)"), [xmake](https://xmake.io), git, .NET 9 SDK and .NET 8 runtime,
-Node.js with pnpm (the Emote plugin's web widget).
+components → "Windows 11 SDK (10.0.22621.0)"), [xmake](https://xmake.io), git, .NET 9 SDK and .NET 8 runtime.
 
 ```powershell
-git submodule update --init
+git clone --recursive https://github.com/oxylol/cp2077-coop.git   # not "Download ZIP": it leaves out vendor\
+cd cp2077-coop
 xmake f -c -m releasedbg --vs_sdkver=10.0.22621.0 --game="C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe" -y
-xmake build Server.Loader      # server + plugins (CoopSystem, EmoteSystem, JobSystem)
+xmake build Server.Loader      # server + plugins (CoopSystem, JobSystem)
 xmake build Cyberpunk2077      # client; links CyberpunkMP.dll into red4ext\plugins\zzzCyberpunkMP
 ```
 

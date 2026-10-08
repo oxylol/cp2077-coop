@@ -13,18 +13,15 @@ public class MultiplayerGameController extends inkGameController {
     public let m_serverListLogicController: wref<ServerListController>;
     public let m_jobListLogicController: wref<JobListController>;
     public let m_deliveryListLogicController: wref<DeliveryListController>;
-    public let m_emoteSelector: wref<EmoteSelector>;
     private let m_serverListWidget: wref<inkWidget>;
     private let m_jobListWidget: wref<inkWidget>;
     private let m_deliveryListWidget: wref<inkWidget>;
-    private let m_emoteSelectorWidget: wref<inkWidget>;
     private let m_messageController: wref<ListController>;
     private let m_scrollArea: wref<inkScrollArea>;
     private let m_scrollController: wref<inkScrollController>;
     protected let m_player: wref<PlayerPuppet>;
     private let m_connectedToServer: Bool = false;
     private let m_serverListOpen: Bool = false;
-    private let m_emoteSelectorOpen: Bool = false;
     private let m_jobListOpen: Bool = false;
     private let m_deliveryListOpen: Bool = false;
     private let m_chatInputOpen: Bool = false;
@@ -82,11 +79,6 @@ public class MultiplayerGameController extends inkGameController {
         this.m_username = "jackhumbert";
         // this.SpawnFromExternal(this.GetWidget(n"hud/wrapper"), r"mods\\cyberpunkmp\\multiplayer_ui.inkwidget", n"phone_device");
         this.AsyncSpawnFromLocal(this.GetWidget(n"hud"), n"phone_device", this, n"OnHotKeySpawn");
-
-
-        let callbackSystem = GameInstance.GetCallbackSystem();
-        callbackSystem.RegisterCallback(n"Entity/Attached", this, n"OnEntityAttached")
-            .AddTarget(DynamicEntityTarget.Tag(n"CyberpunkMP.Puppet.Animation"));
     }
 
     protected cb func OnUninitialize() -> Bool {
@@ -215,7 +207,6 @@ public class MultiplayerGameController extends inkGameController {
         // }
         evt.AddInputHint(CreateInputHint(n"Connect to server", n"UIConnectToServer", true), !this.m_connectedToServer && !this.m_serverListOpen);
         evt.AddInputHint(CreateInputHint(n"Disconnect from server", n"UIDisconnectFromServer", true), this.m_connectedToServer && !this.m_serverListOpen);
-        evt.AddInputHint(CreateInputHint(n"Emote", n"UIEmote", true), this.m_connectedToServer && !this.m_emoteSelectorOpen);
         evt.AddInputHint(CreateInputHint(n"Cancel Job", n"UIShop", true), this.m_connectedToServer && !this.m_deliveryListOpen && this.m_activeDelivery);
         evt.AddInputHint(CreateInputHint(n"Start Job", n"UIJob", false), this.m_connectedToServer && !this.m_deliveryListOpen && !this.m_activeDelivery);
 
@@ -242,13 +233,11 @@ public class MultiplayerGameController extends inkGameController {
             this.AsyncSpawnFromLocal(this.GetWidget(n"hud"), n"chat");
             this.m_player.UnregisterInputListener(this, n"UIConnectToServer");
             this.m_player.RegisterInputListener(this, n"UIDisconnectFromServer");
-            this.m_player.RegisterInputListener(this, n"UIEmote");
             this.m_player.RegisterInputListener(this, n"UIJob");
         } else {
             this.GetWidget(n"hud") as inkCompoundWidget.RemoveChild(this.GetWidget(n"hud/chat"));
             this.m_player.RegisterInputListener(this, n"UIConnectToServer");
             this.m_player.UnregisterInputListener(this, n"UIDisconnectFromServer");
-            this.m_player.UnregisterInputListener(this, n"UIEmote");
             this.m_player.UnregisterInputListener(this, n"UIJob");
         }
         this.UpdateInputHints();
@@ -527,101 +516,6 @@ public class MultiplayerGameController extends inkGameController {
     //     }
     // }
 
-
-// Emote Selector
-
-    private final func ShowEmoteSelector(show: Bool) -> Void {
-        if (show) {
-            this.AsyncSpawnFromLocal(this.GetRootWidget(), n"emote_selector", this, n"OnEmoteSelectorSpawned");
-            // if IsDefined(this.m_phoneIconAnimProxy) {
-            //     this.m_phoneIconAnimProxy.Stop();
-            //     this.m_phoneIconAnimProxy = null;
-            // };
-            // this.m_phoneIconAnimProxy = this.PlayLibraryAnimation(n"2ServerList");
-            this.PlayBackgroundAnim();
-        } else {
-            // if IsDefined(this.m_phoneIconAnimProxy) {
-            //     this.m_phoneIconAnimProxy.Stop();
-            //     this.m_phoneIconAnimProxy = null;
-            // };
-            // if this.m_isInVehicle == 1 {
-            //     this.m_phoneIconAnimProxy = this.PlayLibraryAnimation(n"2Vehicle");
-            // } else {
-            //     this.m_phoneIconAnimProxy = this.PlayLibraryAnimation(n"2Phone");
-            // }
-            this.OnEmoteSelectorClosed();
-            this.PlayBackgroundAnim(true);
-        }
-        this.m_emoteSelectorOpen = show;
-        this.UpdateInputHints();
-    }
-
-    protected cb func OnEmoteSelectorSpawned(widget: ref<inkWidget>, userData: ref<IScriptable>) -> Bool {
-        if IsDefined(widget) {
-            this.m_emoteSelectorWidget = widget;
-            // this.m_emoteSelectorWidget.RegisterToCallback(n"OnCloseServerList", this, n"OnCloseServerList");
-            this.m_emoteSelector = widget.GetController() as EmoteSelector;
-            if IsDefined(this.m_emoteSelector) {
-                this.GetSystemRequestsHandler().PauseGame();
-                this.m_uiSystem.PushGameContext(UIGameContext.ModalPopup);
-                this.m_uiSystem.RequestNewVisualState(n"inkModalPopupState");
-                TimeDilationHelper.SetTimeDilationWithProfile(this.m_player, "radialMenu", true, true);
-                PopupStateUtils.SetBackgroundBlur(this, true);
-
-                // let cursorEvt: ref<inkMenuLayer_SetCursorType> = new inkMenuLayer_SetCursorType();
-                // cursorEvt.Init(n"default", true);
-                // this.QueueEvent(cursorEvt);
-
-                this.m_audioSystem.Play(n"ui_phone_incoming_call_positive");
-                this.m_emoteSelector.Show();
-                this.PlayRumble(RumbleStrength.SuperLight, RumbleType.Slow, RumblePosition.Left);
-                let blackboardSystem: ref<BlackboardSystem> = GameInstance.GetBlackboardSystem(GetGameInstance());
-                let uiBlackboard: ref<IBlackboard> = blackboardSystem.Get(GetAllBlackboardDefs().UIGameData);
-                uiBlackboard.SetBool(GetAllBlackboardDefs().UIGameData.UIEmoteSelectionContextRequest, true, true);
-
-                this.m_player.RegisterInputListener(this, n"mouse_x");
-                this.m_player.RegisterInputListener(this, n"mouse_y");
-
-                // this.EnableServerInput();
-            } else {
-                FTLog(s"[MultiplayerGameController] OnEmoteSelectorSpawned - no logic controller");
-            }
-        } else {
-            FTLog(s"[MultiplayerGameController] OnEmoteSelectorSpawned - no widget");
-        }
-    }
-
-    protected cb func OnEmoteSelectorClosed() -> Bool {
-        if IsDefined(this.m_emoteSelector) {
-            // this.DisableServerInput();
-
-            this.m_player.UnregisterInputListener(this, n"mouse_x");
-            this.m_player.UnregisterInputListener(this, n"mouse_y");
-
-            this.m_audioSystem.Play(n"ui_phone_incoming_call_negative");
-            this.m_emoteSelector.Hide();
-            this.m_repeatingScrollActionEnabled = false;
-            let emoteData = this.m_emoteSelector.GetSelectedEmoteData();
-            if IsDefined(emoteData) {
-                FTLog(s"[MultiplayerGameController] OnEmoteSelectorClosed: \(emoteData.m_name)");
-                EmoteServer.TriggerEmote(emoteData.m_name);
-            } else {
-                FTLog(s"[MultiplayerGameController] OnEmoteSelectorClosed - no emote selected");
-            }
-            this.PlayRumble(RumbleStrength.SuperLight, RumbleType.Fast, RumblePosition.Left);
-            TimeDilationHelper.SetTimeDilationWithProfile(this.m_player, "radialMenu", false, false);
-            PopupStateUtils.SetBackgroundBlur(this, false);
-            this.m_uiSystem.PopGameContext(UIGameContext.ModalPopup);
-            this.m_uiSystem.RestorePreviousVisualState(n"inkModalPopupState");
-            this.GetSystemRequestsHandler().UnpauseGame();
-            this.m_emoteSelector = null;
-            (this.GetRootWidget() as inkCompoundWidget).RemoveChild(this.m_emoteSelectorWidget);
-            this.m_emoteSelectorWidget = null;
-            let blackboardSystem: ref<BlackboardSystem> = GameInstance.GetBlackboardSystem(GetGameInstance());
-            let uiBlackboard: ref<IBlackboard> = blackboardSystem.Get(GetAllBlackboardDefs().UIGameData);
-            uiBlackboard.SetBool(GetAllBlackboardDefs().UIGameData.UIEmoteSelectionContextRequest, false, true);
-        };
-    }
 
 // Job List
 
@@ -977,12 +871,6 @@ public class MultiplayerGameController extends inkGameController {
             if Equals(actionName, n"UIDisconnectFromServer") && Equals(actionType, gameinputActionType.BUTTON_HOLD_COMPLETE) {
                 GameInstance.GetNetworkWorldSystem().Disconnect();
                 return true;
-            } else if Equals(actionName, n"UIEmote") && Equals(actionType, gameinputActionType.BUTTON_PRESSED) && !this.m_emoteSelectorOpen {
-                this.ShowEmoteSelector(true);
-                return true;
-            } else if Equals(actionName, n"UIEmote") && Equals(actionType, gameinputActionType.BUTTON_RELEASED) && this.m_emoteSelectorOpen {
-                this.ShowEmoteSelector(false);
-                return true;
             } else if Equals(actionName, n"UIShop") && Equals(actionType, gameinputActionType.BUTTON_HOLD_COMPLETE) && this.m_activeDelivery {
                 DeliveryServer.CancelDelivery();
                 // this.m_activeDelivery = false;
@@ -1001,11 +889,6 @@ public class MultiplayerGameController extends inkGameController {
                 // let value = ListenerAction.GetValue(action);
                 // let name = ListenerAction.GetName(action);
                 // FTLog(s"\(name): \(value)");
-                if Equals(ListenerAction.GetName(action), n"mouse_x") || Equals(ListenerAction.GetName(action), n"mouse_y") {
-                    this.m_emoteSelector.UpdateAxisIndicator(ListenerAction.GetValue(action), ListenerAction.GetName(action));
-                    return true;
-                };
-
                 return false;
             }
         }

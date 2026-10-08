@@ -63,7 +63,7 @@ target("Server.Scripting")
 
             -- Build plugins
             local mode = is_mode("debug") and "Debug" or "Release"
-            local exclude = {"VehicleSystem"}
+            local exclude = {}
             local plugins = get_plugins(script, exclude)
 
             for _, name in ipairs(plugins) do
