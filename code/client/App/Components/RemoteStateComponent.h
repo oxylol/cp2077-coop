@@ -16,6 +16,7 @@ struct RemoteStateComponent
     uint32_t ShownWeaponState{0};
     bool ShownArmed{false};
     bool ShownReloading{false};
+    bool InCombatMode{false}; // the animation system's, which a character starts out of
     // The weapon in the character's hand: until it's the one above, CharacterSync tries again (WeaponAttempts).
     bool WeaponInHand{false};
     int32_t WeaponAttempts{0};

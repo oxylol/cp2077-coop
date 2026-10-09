@@ -14,7 +14,7 @@ namespace
 // reset them.
 constexpr float kShowInterval = 0.1f;
 constexpr uint32_t kRefreshRuns = 20;
-// A weapon is first drawn with the animation; when the character still doesn't hold it after this many runs, it's
+// A new weapon is first drawn with the animation; when the character still doesn't hold it after this many runs, it's
 // put in its hand directly (and again every as many runs, while it isn't).
 constexpr int32_t kWeaponRetryRuns = 15;
 
@@ -148,12 +148,11 @@ void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity,
             Failed("HoldsWeapon");
 
         if (holds)
-        {
             aState.WeaponInHand = true;
-            aState.WeaponAttempts = 0;
-        }
         else
         {
+            // Animated only the first time after a change: should the character put it away again on its own, the
+            // checks every refresh put it back directly, not with the animation every 2 s.
             if (aState.WeaponAttempts % kWeaponRetryRuns == 0)
             {
                 bool animated = aState.WeaponAttempts == 0;
@@ -165,10 +164,11 @@ void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity,
     }
 
     bool armed = aState.Weapon != 0;
-    if (!aState.Shown || armed != aState.ShownArmed)
+    if (armed != aState.InCombatMode)
     {
         if (!Red::CallVirtual(this, "ApplyCombatMode", id, armed))
             Failed("ApplyCombatMode");
+        aState.InCombatMode = armed;
     }
 
     const bool changed = !aState.Shown || armed != aState.ShownArmed || aState.Locomotion != aState.ShownLocomotion ||
