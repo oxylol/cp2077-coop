@@ -1,9 +1,7 @@
-set_xmakever("2.8.0")
--- On Windows, older versions turn MSVC 14.43+ (Visual Studio 2022 17.13+) into the CMake toolset "v144", which
--- doesn't exist, and every library built with CMake fails.
-if is_host("windows") then
-    set_xmakever("2.9.9")
-end
+-- The package recipes (xmake-repo, always the newest) are written for the newest xmake: with 2.9.9 mimalloc, spdlog,
+-- abseil and openssl3 no longer install ("bad argument #1 to 'directory'"). Before 2.9.9, MSVC 14.43+ also became
+-- the nonexistent CMake toolset "v144". The workflows use this version.
+set_xmakever("3.1.1")
 set_policy("build.ccache", false)
 set_policy("package.requires_lock", false)
 

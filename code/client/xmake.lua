@@ -15,6 +15,9 @@ target("Client")
     set_pcxxheader("stdafx.h")
     add_headerfiles("**.h", "**.hpp", "**.inl")
     add_files("**.cpp")
+    -- coop.ini as the game first writes it (App/Settings.cpp): #include "coop.ini.h"
+    add_rules("utils.bin2c", {extensions = {".ini"}})
+    add_files("../assets/coop.ini")
     add_linkdirs(".")
     add_syslinks(
         "user32",

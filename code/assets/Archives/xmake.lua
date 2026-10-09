@@ -1,27 +1,15 @@
+-- The files are only listed here; the game loads them from code/assets (debug, releasedbg) or from the release zip's
+-- assets folder (release; tools/package/make-release.ps1 puts them there).
 rule("archive")
     set_extensions(".archive")
-    -- on_build_file(function (target, sourcefile, opt)
-    --     os.cp(sourcefile, path.join(target:targetdir(), path.basename(sourcefile) .. ".archive"))
-    -- end)
-    on_install(function (target)
-        print("on_install")
-        for _, sourcebatch in pairs(target:sourcebatches()) do
-            local sourcekind = sourcebatch.rulename
-            if sourcekind == "archive" then
-                for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
-                    os.cp(sourcefile, path.join(target:installdir("launcher"), "mod", "assets", "Archives", path.basename(sourcefile) .. ".archive"))
-                end
-            end
-        end
-    end)
 
 target("Archives")
     -- debug and releasedbg (development) builds load the assets from the repository; release ones from the package.
     if not is_mode("release") then
         add_defines("TP_ARCHIVES_LOCATION=\"../../../../code/assets/Archives/packed/archive/pc/mod/\"", {public = true})
-    else 
+    else
         add_defines("TP_ARCHIVES_LOCATION=\"assets/Archives\"", {public = true})
-    end 
+    end
     set_kind("headeronly")
     set_group("Assets")
     add_rules("archive")

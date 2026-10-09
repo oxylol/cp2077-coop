@@ -5,7 +5,8 @@ target("Session.Tests")
     set_group("Tests")
     add_files("*.cpp")
     add_includedirs("../../build", "../../vendor")
-    add_defines("STEAMNETWORKINGSOCKETS_STATIC_LINK")
+    -- The project defines _UNICODE, with which Catch2 2.x picks wmain() on Windows and then doesn't compile.
+    add_defines("STEAMNETWORKINGSOCKETS_STATIC_LINK", "DO_NOT_USE_WMAIN")
     add_deps("Common", "Protocol", "Server.Core")
     add_packages(
         "catch2",

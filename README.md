@@ -10,10 +10,12 @@ upstream's fixes for **game patch 2.31**.
 
 ## Playing
 
-1. Put the mod into the game folder. *(For now: build it, see below. A single zip with everything it needs is
-   coming next: extract it into the game folder and you're done.)*
-2. Open `red4ext\plugins\zzzCyberpunkCoop\coop.ini` (it's created on the first start) and set the same `password`
-   for everyone, and your `name`. Guests set `join_address` to the host's address.
+1. Download `CyberpunkCoop-<version>.zip` from [Releases](https://github.com/oxylol/cp2077-coop/releases) (or the
+   newest build: [Actions](https://github.com/oxylol/cp2077-coop/actions/workflows/windows.yml) → a green run →
+   Artifacts) and extract all of it into the game folder (the one with `bin`, `engine` and `r6`). It brings what
+   the mod needs: RED4ext, redscript, Codeware, ArchiveXL, TweakXL, Input Loader.
+2. Open `red4ext\plugins\zzzCyberpunkCoop\coop.ini` and set the same `password` for everyone, and your `name`.
+   Guests set `join_address` to the host's address (coop.ini explains which).
 3. In the game, load a save. The host holds **`/`**: "Hosting a co-op session". Guests hold **`.`**: "Joined …'s
    co-op session". Holding **`/`** again leaves (the host leaving ends the session for everyone).
 
@@ -22,7 +24,7 @@ upstream's fixes for **game patch 2.31**.
 | Players | Up to 4 (`max_players`), each from their own save. |
 | Shared | The other players (looks, clothes, movement), their cars, the host's time of day (guests only move forward) and weather. |
 | Messages | Joins, leaves, wrong password, full session, lost connection: in the middle of the screen. |
-| Connecting | For now by address (`join_address`, default `127.0.0.1:11778`: two games on one PC). Over the internet without port forwarding: through Steam, next. |
+| Connecting | For now by address (`join_address`, default `127.0.0.1:11778`: two games on one PC). Over the internet: the host forwards UDP port 11778, or both use a virtual LAN (Tailscale, ZeroTier). Without either, through Steam: next. |
 
 Two games on one PC: `powershell -ExecutionPolicy Bypass -File tools\coop\start-local.ps1 -Game "<game>\bin\x64\Cyberpunk2077.exe"`
 starts one as "Host" and one as "Guest". Don't save in both at once: they share the save folder.
@@ -30,7 +32,7 @@ starts one as "Host" and one as "Guest". Don't save in both at once: they share 
 ## Build (Windows)
 
 Requirements: Visual Studio 2022 (C++ workload), a Windows SDK **below 10.0.26100** (VS Installer → Individual
-components → "Windows 11 SDK (10.0.22621.0)"), [xmake](https://xmake.io) 2.9.9 or newer, git. In the game:
+components → "Windows 11 SDK (10.0.22621.0)"), [xmake](https://xmake.io) 3.1.1 or newer, git. In the game:
 [RED4ext](https://github.com/WopsS/RED4ext/releases), [redscript](https://github.com/jac3km4/redscript/releases),
 [Codeware](https://github.com/psiberx/cp2077-codeware/releases), [ArchiveXL](https://github.com/psiberx/cp2077-archive-xl/releases),
 [TweakXL](https://github.com/psiberx/cp2077-tweak-xl/releases), [Input Loader](https://github.com/jackhumbert/cyberpunk2077-input-loader/releases).
@@ -46,8 +48,12 @@ xmake build Session.Tests; xmake run Session.Tests   # the co-op session over re
 ```
 
 In `releasedbg` and `debug` builds the game loads the scripts, tweaks and archives straight from `code/assets`, so
-a script change needs no rebuild, only a game restart. GitHub builds and tests everything on every pull request
-and every Monday.
+a script change needs no rebuild, only a game restart.
+
+The zip: `xmake f -m release --vs_sdkver=10.0.22621.0 -y`, `xmake build Client`, then
+`powershell -ExecutionPolicy Bypass -File tools\package\make-release.ps1 -Version <version>` (it downloads the
+requirements pinned in `tools/package/requirements.json` and checks their sha256). GitHub does all of this on every
+push, pull request and Monday (the zip is the run's artifact), and publishes it as a release for a `v<version>` tag.
 
 ## Code
 
@@ -58,12 +64,12 @@ and every Monday.
 | `code/assets` | Scripts (HUD and hold keys: `redscript/Ink/MultiplayerGameController.reds`), key bindings, tweaks, archives. |
 | `code/protocol` | The messages between the games. |
 | `code/tests` | The session tests. |
+| `tools/package` | The release zip: script, pinned requirements, the README that goes in it. |
 
 ## Next
 
-1. One zip to extract into the game folder, with RED4ext, redscript, Codeware, ArchiveXL, TweakXL and Input Loader.
-2. Joining through Steam by password: no addresses, no port forwarding (Steam copies of the game).
-3. Shared story progress (quest state) and shared encounters.
+1. Joining through Steam by password: no addresses, no port forwarding (Steam copies of the game).
+2. Shared story progress (quest state) and shared encounters.
 
 ## License
 

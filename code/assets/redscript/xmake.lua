@@ -1,27 +1,15 @@
+-- The files are only listed here; the game loads them from code/assets (debug, releasedbg) or from the release zip's
+-- assets folder (release; tools/package/make-release.ps1 puts them there).
 rule("redscript")
     set_extensions(".reds")
-    -- on_build_file(function (target, sourcefile, opt)
-    --     -- not sure how to not hard-code the relative directory
-    --     os.cp(sourcefile, path.join(target:targetdir() .. "/redscript", path.relative(sourcefile, "code/redscript")))
-    -- end)
-    on_install(function (target)
-        for _, sourcebatch in pairs(target:sourcebatches()) do
-            local sourcekind = sourcebatch.rulename
-            if sourcekind == "redscript" then
-                for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
-                    os.cp(sourcefile, path.join(target:installdir("launcher"), "mod", "assets", "redscript", path.relative(sourcefile, "code/redscript/assets")))
-                end
-            end
-        end
-    end)
 
 target("redscript")
     -- debug and releasedbg (development) builds load the assets from the repository; release ones from the package.
     if not is_mode("release") then
         add_defines("TP_REDSCRIPT_LOCATION=\"../../../../code/assets/redscript\"", {public = true})
-    else 
+    else
         add_defines("TP_REDSCRIPT_LOCATION=\"assets/redscript\"", {public = true})
-    end 
+    end
     set_kind("headeronly")
     set_group("Assets")
     add_rules("redscript")

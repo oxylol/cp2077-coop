@@ -6,7 +6,10 @@
 
 #include "RED4ext/Api/EMainReason.hpp"
 
+// Where the DLL really is (scripts, tweaks and archives are found from there; a dev build links the DLL into the game).
 std::filesystem::path GCyberpunkMpLocation;
+// The plugin folder in the game (red4ext\plugins\zzzCyberpunkCoop), where coop.ini is.
+std::filesystem::path GPluginFolder;
 
 EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 
@@ -28,6 +31,7 @@ void Initialize()
     } while (GetLastError() == ERROR_INSUFFICIENT_BUFFER);
 
     fs::path path = filename;
+    GPluginFolder = path.parent_path();
     if (is_symlink(path))
     {
         path = read_symlink(path);

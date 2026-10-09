@@ -1,0 +1,53 @@
+{
+  "_about": "What the release zip bundles next to the mod (tools/package/make-release.ps1). Each is a release zip laid out for the game folder, downloaded from its GitHub release and checked against sha256. To update one: change tag and asset, run make-release.ps1 -UpdateHashes, check what it prints, commit. license: where the zip keeps its license; the zips without one get it from licenses/.",
+  "requirements": [
+    {
+      "name": "RED4ext",
+      "repo": "WopsS/RED4ext",
+      "tag": "v1.30.0",
+      "asset": "red4ext-1.30.0.zip",
+      "sha256": "3a72225c9d2c46c99f4a4159d952b9d24366357c2423eb7ea255c84e9e11c0b0",
+      "license": "red4ext/LICENSE.txt"
+    },
+    {
+      "name": "redscript",
+      "repo": "jac3km4/redscript",
+      "tag": "v0.5.31",
+      "asset": "redscript-v0.5.31-windows.zip",
+      "sha256": "799bbd88863f6728616f8d723c941ea15dff71ed5bbfd50c525f0d39ea0bf46b",
+      "license": "licenses/redscript-LICENSE.txt"
+    },
+    {
+      "name": "Codeware",
+      "repo": "psiberx/cp2077-codeware",
+      "tag": "v1.20.5",
+      "asset": "Codeware-1.20.5.zip",
+      "sha256": "102989e199bad650fe6e53395c22bac53fdd7abecc6eeec3b0046886631591f0",
+      "license": "red4ext/plugins/Codeware/LICENSE"
+    },
+    {
+      "name": "ArchiveXL",
+      "repo": "psiberx/cp2077-archive-xl",
+      "tag": "v1.27.4",
+      "asset": "ArchiveXL-1.27.4.zip",
+      "sha256": "6c638dc1108a565ff4806835a17f704cbb2ab2afeb8ccf700080797c3f70591c",
+      "license": "red4ext/plugins/ArchiveXL/LICENSE"
+    },
+    {
+      "name": "TweakXL",
+      "repo": "psiberx/cp2077-tweak-xl",
+      "tag": "v1.11.5",
+      "asset": "TweakXL-1.11.5.zip",
+      "sha256": "99ed60fd533a963e12955e38fabe55d21a046c15102ee4a2d9b82c551bc8f894",
+      "license": "red4ext/plugins/TweakXL/LICENSE"
+    },
+    {
+      "name": "Input Loader",
+      "repo": "jackhumbert/cyberpunk2077-input-loader",
+      "tag": "v0.2.3",
+      "asset": "input_loader_v0.2.3.zip",
+      "sha256": "6011515264bfb582591bf2ce66e956ac9c7993dfb5046590ba3ee7625af603ee",
+      "license": "red4ext/plugins/input_loader/license.md"
+    }
+  ]
+}

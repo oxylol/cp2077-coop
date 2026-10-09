@@ -7,6 +7,9 @@ on:
       - main
       - dev
       - 'claude/**'
+    # A tag v<version> (e.g. v0.2.0) publishes the zip as a GitHub release.
+    tags:
+      - 'v*'
   # Weekly, so changes outside the repository (runner images, xmake, package recipes) show up before a push
   # does; GitHub mails the failure. Also runnable by hand from the Actions tab.
   schedule:
@@ -17,15 +20,18 @@ jobs:
   build:
     strategy:
       matrix:
-        # windows-latest moved to an image with Visual Studio 2026, which xmake 2.9.6 doesn't find, and
-        # windows-2025 only has Windows SDK 10.0.26100 (too new for this build). windows-2022 has
-        # VS 2022 and SDK 10.0.19041.
+        # windows-latest moved to an image with Visual Studio 2026 and windows-2025 only has Windows
+        # SDK 10.0.26100 (too new for this build). windows-2022 has VS 2022 and SDK 10.0.19041.
         os: [windows-2022]
         arch: [x64]
-        mode: [releasedbg]
+        # What players get (tools/package/make-release.ps1). Development builds (releasedbg) differ only in where the
+        # game finds the scripts, tweaks and archives.
+        mode: [release]
 
     runs-on: ${{ matrix.os }}
     if: "!contains(github.event.head_commit.message, 'ci skip')"
+    permissions:
+      contents: write # the GitHub release on tags
 
     steps:
       - uses: actions/checkout@v4
@@ -48,11 +54,10 @@ jobs:
       - name: 'Setup xmake'
         uses: xmake-io/github-action-setup-xmake@v1
         with:
-          # 2.9.6 turns MSVC 14.43+ (the runner's VS 2022 17.14 has 14.44) into the nonexistent CMake
-          # toolset v144; 2.9.9 maps 14.40-14.49 to v143.
-          xmake-version: 2.9.9 # Sync with cache key too
+          # The version xmake.lua asks for (set_xmakever): the package recipes follow the newest xmake.
+          xmake-version: 3.1.1 # Sync with cache key too
           actions-cache-folder: '.xmake-cache' # This doesn't cache dependencies, only xmake itself
-          actions-cache-key: ${{ runner.os }}-xmake-cache-2.9.9
+          actions-cache-key: ${{ runner.os }}-xmake-cache-3.1.1
 
       # Visual Studio 2022, a Windows SDK below 10.0.26100, xmake, submodules (tools/check/check-env.ps1)
       - name: 'Check build environment'
@@ -71,3 +76,32 @@ jobs:
 
       - name: 'Session tests'
         run: xmake run Session.Tests
+
+      # The zip players extract into the game folder: the mod and its requirements (tools/package/requirements.json,
+      # checked against their sha256).
+      - name: 'Package'
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "dev-$($env:GITHUB_SHA.Substring(0, 7))" }
+          ./tools/package/make-release.ps1 -Version $version
+          "PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
+
+      # Downloading this artifact gives the zip's contents in a zip: extract it into the game folder.
+      - name: 'Upload the package'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CyberpunkCoop-${{ env.PACKAGE_VERSION }}
+          path: build/package/stage/
+
+      # For crash dumps
+      - name: 'Upload the symbols'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CyberpunkCoop-${{ env.PACKAGE_VERSION }}-pdb
+          path: build/windows/x64/release/CyberpunkCoop.pdb
+          if-no-files-found: warn
+
+      - name: 'GitHub release'
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$env:GITHUB_REF_NAME" "build/package/CyberpunkCoop-$env:PACKAGE_VERSION.zip" --title "Cyberpunk Coop $env:PACKAGE_VERSION" --generate-notes

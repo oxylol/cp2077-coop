@@ -77,15 +77,15 @@ if ($empty.Count -gt 0) {
     Ok "submodules (vendor\)"
 }
 
-# xmake 2.9.9 or newer: older versions turn MSVC 14.43+ (Visual Studio 2022 17.13+) into the CMake toolset
-# "v144", which doesn't exist, and every library built with CMake fails.
+# xmake 3.1.1 or newer (set_xmakever in xmake.lua): the package recipes are written for the newest xmake, and
+# 2.9.9 can no longer install some of them.
 $xmakeVersion = Run "xmake" @("--version")
 if ($null -eq $xmakeVersion) {
-    Fail "xmake not found. Install it from https://xmake.io (2.9.9 or newer)."
+    Fail "xmake not found. Install it from https://xmake.io (3.1.1 or newer)."
 } elseif ($xmakeVersion -match 'v(\d+)\.(\d+)\.(\d+)') {
     $version = [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])"
-    if ($version -lt [version]"2.9.9") {
-        Fail "xmake $version is too old; 2.9.9 or newer is needed. Run: xmake update"
+    if ($version -lt [version]"3.1.1") {
+        Fail "xmake $version is too old; 3.1.1 or newer is needed. Run: xmake update"
     } else {
         Ok "xmake $version"
     }

@@ -1,23 +1,15 @@
+-- The files are only listed here; the game loads them from code/assets (debug, releasedbg) or from the release zip's
+-- assets folder (release; tools/package/make-release.ps1 puts them there).
 rule("input")
     set_extensions(".xml")
-    on_install(function (target)
-        for _, sourcebatch in pairs(target:sourcebatches()) do
-            local sourcekind = sourcebatch.rulename
-            if sourcekind == "input" then
-                for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
-                    os.cp(sourcefile, path.join(target:installdir("launcher"), "mod", "assets", "Inputs", path.basename(sourcefile) .. ".xml"))
-                end
-            end
-        end
-    end)
 
 target("Inputs")
     -- debug and releasedbg (development) builds load the assets from the repository; release ones from the package.
     if not is_mode("release") then
         add_defines("TP_INPUTS_LOCATION=\"../../../../code/assets/Inputs/CyberpunkMP.xml\"", {public = true})
-    else 
+    else
         add_defines("TP_INPUTS_LOCATION=\"assets/Inputs/CyberpunkMP.xml\"", {public = true})
-    end 
+    end
     set_kind("headeronly")
     set_group("Assets")
     add_rules("input")

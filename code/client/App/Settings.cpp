@@ -5,30 +5,15 @@
 #include <map>
 #include <optional>
 
-extern std::filesystem::path GCyberpunkMpLocation;
+extern std::filesystem::path GPluginFolder;
 
 namespace
 {
-constexpr auto kDefaultIni = R"(; Cyberpunk 2077 co-op. Edit, save, and restart the game.
-;
-; In the game: hold "/" to host a session, hold "." to join one. In a session, hold "/" to leave it.
-
-[coop]
-; Your name, shown to the other players.
-name = V
-
-; The host and every guest need the same password.
-password = changeme
-
-; Where "Join" connects: the host's IP address and port. On the same PC: 127.0.0.1:11778.
-join_address = 127.0.0.1:11778
-
-; The port this game hosts on. If it's taken (another game on this PC), the next one is used.
-port = 11778
-
-; Players in a session you host, you included.
-max_players = 4
-)";
+// coop.ini as it's first written: code/assets/coop.ini (also in the release zip), built in by xmake's utils.bin2c
+// with a terminating zero.
+constexpr unsigned char kDefaultIni[] = {
+#include "coop.ini.h"
+};
 
 std::string Trim(std::string aText)
 {
@@ -79,13 +64,13 @@ uint16_t ToPort(const std::string& acText, uint16_t aDefault)
 void Settings::Load()
 {
     Settings& settings = Get();
-    settings.iniPath = GCyberpunkMpLocation / "coop.ini";
+    settings.iniPath = GPluginFolder / "coop.ini";
 
     std::error_code error;
     if (!fs::exists(settings.iniPath, error))
     {
-        std::ofstream file(settings.iniPath);
-        file << kDefaultIni;
+        std::ofstream file(settings.iniPath, std::ios::binary);
+        file.write(reinterpret_cast<const char*>(kDefaultIni), sizeof(kDefaultIni) - 1);
         spdlog::info("Created {}", settings.iniPath.string());
     }
 
