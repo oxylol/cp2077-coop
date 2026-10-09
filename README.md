@@ -28,6 +28,7 @@ engine calls `code/client/App/World/CoopNative.cpp`, customization lookup `code/
 
 Requirements: Visual Studio 2022 (C++ workload), a Windows SDK **below 10.0.26100** (VS Installer → Individual
 components → "Windows 11 SDK (10.0.22621.0)"), [xmake](https://xmake.io), git, .NET 9 SDK and .NET 8 runtime.
+(Building the server on Linux needs the .NET 10 SDK instead: CppSharp's Linux build targets it.)
 
 ```powershell
 git clone --recursive https://github.com/oxylol/cp2077-coop.git   # not "Download ZIP": it leaves out vendor\
