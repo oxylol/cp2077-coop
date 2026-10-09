@@ -1,4 +1,9 @@
 set_xmakever("2.8.0")
+-- On Windows, older versions turn MSVC 14.43+ (Visual Studio 2022 17.13+) into the CMake toolset "v144", which
+-- doesn't exist, and every library built with CMake fails.
+if is_host("windows") then
+    set_xmakever("2.9.9")
+end
 set_policy("build.ccache", false)
 set_policy("package.requires_lock", false)
 
@@ -72,6 +77,7 @@ if is_mode("debug") then
 end
 
 includes('tools/codegen')
+includes('tools/check')
 includes('tools/csharp')
 
 -- add projects
