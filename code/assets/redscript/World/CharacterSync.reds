@@ -46,6 +46,8 @@ public native class CharacterSync extends IScriptable {
             return wasReloading;
         }
 
+        CoopBlockReactions(npc);
+
         let crouched = locomotion == EnumInt(gamePSMLocomotionStates.Crouch)
             || locomotion == EnumInt(gamePSMLocomotionStates.CrouchSprint)
             || locomotion == EnumInt(gamePSMLocomotionStates.CrouchDodge)
@@ -158,6 +160,14 @@ public native class CharacterSync extends IScriptable {
         }
     }
 
+    // The character goes (its player left, the session ended): its look-at with it, not left pointing at nothing.
+    public func ForgetAim(id: EntityID) -> Void {
+        let aims = GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(n"CyberpunkMP.World.CoopAims") as CoopAims;
+        if IsDefined(aims) {
+            aims.Apply(this.Puppet(id), id, false, 0.0);
+        }
+    }
+
     // Shots: the character's and the weapon's recoil, and the muzzle flash. Effects only, nothing is hit.
     public func ApplyShots(id: EntityID, count: Int32) -> Void {
         let npc = this.Puppet(id);
@@ -222,6 +232,19 @@ public class CoopAims extends ScriptableSystem {
         let forward = Vector4.Normalize2D(npc.GetWorldForward());
         let reach = 10.0 * CosF(pitch);
         this.m_targets[index].SetWorldOffset(new Vector4(forward.X * reach, forward.Y * reach, 1.5 + 10.0 * SinF(pitch), 0.0));
+    }
+}
+
+// A stand-in for another player doesn't react on its own (cower, flee, get out of its car): its player's game says
+// what it does. The game's own switch (aiHitReactionTasks.script blocks reactions with it for a while).
+public static func CoopBlockReactions(npc: ref<GameObject>) -> Void {
+    let puppet = npc as ScriptedPuppet;
+    if !IsDefined(puppet) || !IsDefined(puppet.GetStimReactionComponent()) {
+        return;
+    }
+    let reactions = puppet.GetStimReactionComponent().GetPuppetReactionBlackboard();
+    if IsDefined(reactions) {
+        reactions.SetBool(GetAllBlackboardDefs().PuppetReaction.blockReactionFlag, true);
     }
 }
 

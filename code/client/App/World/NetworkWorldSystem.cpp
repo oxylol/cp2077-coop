@@ -112,6 +112,7 @@ void NetworkWorldSystem::DeSpawn(uint64_t aServerId) const
         return;
 
     GetVehicleSystem()->Unseat(entity);
+    GetCharacterSync()->Forget(entity);
 
     if (auto* pEntity = entity.get<EntityComponent>())
     {

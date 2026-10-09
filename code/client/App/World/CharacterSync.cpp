@@ -211,6 +211,17 @@ void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity,
         Failed("ApplyAim");
 }
 
+void CharacterSync::Forget(flecs::entity aEntity)
+{
+    const auto* pEntity = aEntity.get<EntityComponent>();
+    if (!pEntity || !aEntity.has<RemoteStateComponent>())
+        return;
+
+    auto id = pEntity->Id;
+    if (!Red::CallVirtual(this, "ForgetAim", id))
+        Failed("ForgetAim");
+}
+
 void CharacterSync::HandleCharacterState(const PacketEvent<server::NotifyCharacterState>& aMessage)
 {
     const auto pWorld = Red::GetGameSystem<NetworkWorldSystem>();

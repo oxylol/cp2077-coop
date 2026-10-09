@@ -25,6 +25,9 @@ struct CharacterSync : RED4ext::IScriptable
     // Where this player looks, up or down (radians), for their moves (NetworkWorldSystem::UpdatePlayerLocation).
     float GetAimPitch() const noexcept { return m_aimPitch; }
 
+    // Another player's character is about to go: what's shown on it goes first (its aim's look-at).
+    void Forget(flecs::entity aEntity);
+
 protected:
     void HandleCharacterState(const PacketEvent<server::NotifyCharacterState>& aMessage);
     void HandleCharacterShot(const PacketEvent<server::NotifyCharacterShot>& aMessage);

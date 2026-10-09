@@ -86,6 +86,7 @@ public native class VehicleSystem extends IScriptable {
 
         this.Log("seating: clear weapon, animset");
         CoopClearForVehicle(character);
+        CoopBlockReactions(character);
         let animVariables = VehicleComponent.SetAnimsetOverrideForPassenger(character, vehicle_id, sit_position, 1.0);
         let workspots = GameInstance.GetWorkspotSystem(game);
         let synchronized: array<EntityID>;
@@ -209,4 +210,34 @@ protected cb func OnUnmountingEvent(evt: ref<UnmountingEvent>) -> Bool {
     GameInstance.GetNetworkWorldSystem().GetVehicleSystem().OnVehicleExit();
 
     return result;
+}
+
+// The other players' characters here are stand-ins, seated and moved by their players' games, not passengers for the
+// car's own logic to order out, scare or count: told "ExitVehicle", their AI, which never seated them, can't get them
+// out, and the game crashed (also only the car's driver getting out, with one of them riding along).
+public static func CoopIsStandIn(object: wref<GameObject>) -> Bool {
+    return IsDefined(object) && GameInstance.GetDynamicEntitySystem().IsTagged(object.GetEntityID(), n"CyberpunkMP.Puppet");
+}
+
+public static func CoopRemoveStandIns(objects: script_ref<array<wref<GameObject>>>) -> Void {
+    let i = ArraySize(Deref(objects)) - 1;
+    while i >= 0 {
+        if CoopIsStandIn(Deref(objects)[i]) {
+            ArrayErase(Deref(objects), i);
+        }
+        i -= 1;
+    }
+}
+
+@wrapMethod(VehicleComponent)
+public final static func GetAllPassengers(gi: GameInstance, vehicleID: EntityID, includeTrunkBody: Bool, passengers: script_ref<array<wref<GameObject>>>) -> Void {
+    wrappedMethod(gi, vehicleID, includeTrunkBody, passengers);
+    CoopRemoveStandIns(passengers);
+}
+
+@wrapMethod(VehicleComponent)
+public final static func CheckIfPassengersCanLeaveCar(gi: GameInstance, vehicleID: EntityID, passengersCanLeaveCar: script_ref<array<wref<GameObject>>>, passengersCantLeaveCar: script_ref<array<wref<GameObject>>>) -> Void {
+    wrappedMethod(gi, vehicleID, passengersCanLeaveCar, passengersCantLeaveCar);
+    CoopRemoveStandIns(passengersCanLeaveCar);
+    CoopRemoveStandIns(passengersCantLeaveCar);
 }
