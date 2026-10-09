@@ -234,24 +234,37 @@ bool VehicleSystem::HandleVehicleExitMessage(const PacketEvent<server::NotifyVeh
 {
     spdlog::info("[VehicleSystem] HandleVehicleExitMessage: character {:x}", aMessage.get_character_id());
 
-    const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
-    auto characterEntity = worldSystem->GetEntityByServerId(aMessage.get_character_id());
-    if (!characterEntity.is_alive())
-        return true;
-
-    const auto handle = Red::Handle(this);
-    bool res;
-    const auto character = worldSystem->GetEntityIdByServerId(aMessage.get_character_id());
-    Red::Detail::CallFunctionWithArgs(m_pExitVehicle, handle, res, character);
-
-    if (const auto* pAttached = characterEntity.get<AttachedComponent>())
+    // Out before the vehicle was even there to seat them in: not seated later.
+    for (auto it = m_pendingMounts.begin(); it != m_pendingMounts.end(); ++it)
     {
-        if (pAttached->Driver)
-            ReleaseRemoteDriving(pAttached->Vehicle, true);
-        characterEntity.remove<AttachedComponent>();
+        auto& messages = it.value();
+        std::erase_if(messages, [&](const auto& acMount) { return acMount.get_character_id() == aMessage.get_character_id(); });
     }
 
+    const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
+    auto characterEntity = worldSystem->GetEntityByServerId(aMessage.get_character_id());
+    if (characterEntity.is_alive())
+        Unseat(characterEntity);
+
     return true;
+}
+
+void VehicleSystem::Unseat(flecs::entity aCharacter)
+{
+    const auto* pAttached = aCharacter.get<AttachedComponent>();
+    if (!pAttached)
+        return;
+    const auto seat = *pAttached;
+
+    const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
+    const auto handle = Red::Handle(this);
+    bool res = false;
+    const auto character = worldSystem->GetEntityIdByServerId(aCharacter);
+    Red::Detail::CallFunctionWithArgs(m_pExitVehicle, handle, res, character);
+
+    if (seat.Driver)
+        ReleaseRemoteDriving(seat.Vehicle, true);
+    aCharacter.remove<AttachedComponent>();
 }
 
 void VehicleSystem::ReleaseRemoteDriving(Red::EntityID aVehicle, bool aParked)

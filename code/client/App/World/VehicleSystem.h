@@ -11,6 +11,10 @@ struct VehicleSystem : RED4ext::IScriptable
 
     void Update(uint64_t aTick);
 
+    // A remote character out of its seat, if it's in one; before it goes (its player left, the session ended): a car
+    // still holding a character that's gone crashed the game.
+    void Unseat(flecs::entity aCharacter);
+
     void OnInitialize(const RED4ext::JobHandle& aJob);
     void OnWorldAttached(RED4ext::world::RuntimeScene* aScene);
     void OnAfterWorldDetach();

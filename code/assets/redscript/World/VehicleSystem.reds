@@ -111,6 +111,23 @@ public native class VehicleSystem extends IScriptable {
         let mounting = GameInstance.GetMountingFacility(game);
         let info = mounting.GetMountingInfoSingleWithObjects(character);
         let vehicle = GameInstance.FindEntityByID(game, info.parentId) as VehicleObject;
+
+        // The car is told the seat empties, as the game's own exits tell it (vehicleTransition.script
+        // StartLeavingVehicle, aiVehicle.script): without it, it kept the character in that seat, and crashed when the
+        // same character sat in another seat with nobody at the wheel, or once the character was gone.
+        if IsDefined(vehicle) {
+            let leaving = new VehicleStartedMountingEvent();
+            leaving.slotID = info.slotId.id;
+            leaving.isMounting = false;
+            leaving.character = character;
+            leaving.instant = true;
+            vehicle.QueueEvent(leaving);
+            if VehicleComponent.IsDriverSlot(info.slotId.id) {
+                let noDriver = new AIEvent();
+                noDriver.name = n"NoDriver";
+                vehicle.QueueEvent(noDriver);
+            }
+        }
         GameInstance.GetWorkspotSystem(game).UnmountFromVehicle(vehicle, character, true);
         if EntityID.IsDefined(info.parentId) {
             VehicleComponent.SetAnimsetOverrideForPassenger(character, info.parentId, info.slotId.id, 0.0);

@@ -108,8 +108,10 @@ void NetworkWorldSystem::DeSpawn(uint64_t aServerId) const
 {
     const auto entity = GetEntityByServerId(aServerId);
 
-    if (!entity)
+    if (!entity || !entity.is_alive())
         return;
+
+    GetVehicleSystem()->Unseat(entity);
 
     if (auto* pEntity = entity.get<EntityComponent>())
     {
@@ -452,17 +454,16 @@ void NetworkWorldSystem::OnConnected()
 
 void NetworkWorldSystem::OnDisconnected(Client::EDisconnectReason aReason)
 {
-    each([this](flecs::entity entity, EntityComponent&)
-        {
-            DeSpawn(entity.raw_id());
-            entity.destruct();
-        });
+    // Collected first, then removed: not while iterating. Everyone out of their seats before any of it goes.
+    std::vector<flecs::entity> entities;
+    each([&entities](flecs::entity entity, EntityComponent&) { entities.push_back(entity); });
+    each([&entities](flecs::entity entity, SpawningComponent&) { entities.push_back(entity); });
 
-    each([this](flecs::entity entity, SpawningComponent&)
-        {
-            DeSpawn(entity.raw_id());
-            entity.destruct();
-        });
+    for (const auto& entity : entities)
+        GetVehicleSystem()->Unseat(entity);
+
+    for (const auto& entity : entities)
+        DeSpawn(entity.raw_id()); // (which deletes it)
 
     App::PuppetRegistry::Clear();
 
