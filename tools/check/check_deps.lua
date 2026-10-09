@@ -95,6 +95,11 @@ local function _check(problems)
                 for _, dep in ipairs(librarydeps) do
                     local recorded = manifest.deps and manifest.deps[dep:name()]
                     local version = inuse(dep)
+                    -- For a dependency taken from the system, xmake records the version it asked for, not the
+                    -- system's (openssl3 3.6.5 for the system's 3.0.13).
+                    if dep:is_system() then
+                        version = dep:version_str() or version
+                    end
                     if recorded and recorded.version ~= version then
                         table.insert(problems, string.format("%s %s (installed in %s) was built against %s %s, but "
                             .. "the project uses %s %s. Give its build its own identity (a changed config) or "
