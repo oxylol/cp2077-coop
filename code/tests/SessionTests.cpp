@@ -45,6 +45,10 @@ struct TestClient final : Client
         m_dispatcher.sink<PacketEvent<server::NotifyEntityMove>>().connect<&TestClient::OnEntityMove>(this);
         m_dispatcher.sink<PacketEvent<server::NotifyCharacterState>>().connect<&TestClient::OnCharacterState>(this);
         m_dispatcher.sink<PacketEvent<server::NotifyCharacterShot>>().connect<&TestClient::OnCharacterShot>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyVehicleLoad>>().connect<&TestClient::OnVehicleLoad>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyVehicleEnter>>().connect<&TestClient::OnVehicleEnter>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyVehicleExit>>().connect<&TestClient::OnVehicleExit>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyVehicleControlAssigned>>().connect<&TestClient::OnVehicleControl>(this);
     }
 
     // What the game sends once it's in: its character, where it stands, what it wears and looks like.
@@ -62,7 +66,7 @@ struct TestClient final : Client
         SendMessage(request);
     }
 
-    void Move(float aX, uint64_t aTick)
+    void Move(float aX, uint64_t aTick, float aAimPitch = 0.f)
     {
         client::MoveEntityRequest request;
         request.set_id(*OwnCharacter);
@@ -70,6 +74,7 @@ struct TestClient final : Client
         position.set_x(aX);
         request.set_position(position);
         request.set_tick(aTick);
+        request.set_aim_pitch(aAimPitch);
         SendMessage(request);
     }
 
@@ -89,6 +94,25 @@ struct TestClient final : Client
         client::CharacterShotRequest request;
         request.set_id(*OwnCharacter);
         request.set_count(aCount);
+        SendMessage(request);
+    }
+
+    // Into a vehicle the session doesn't know yet (aKnown 0), or one it does, in the seat (CName hash).
+    void EnterVehicle(uint64_t aKnown, uint64_t aSeat)
+    {
+        client::EnterVehicleRequest request;
+        request.set_id(*OwnCharacter);
+        request.set_vehicle_id(0x0B'5EED'CAFEull);
+        request.set_sit_id(aSeat);
+        if (aKnown)
+            request.set_remote_vehicle_id(aKnown);
+        SendMessage(request);
+    }
+
+    void ExitVehicle()
+    {
+        client::ExitVehicleRequest request;
+        request.set_id(*OwnCharacter);
         SendMessage(request);
     }
 
@@ -151,7 +175,7 @@ struct TestClient final : Client
     }
     void OnEntityMove(const PacketEvent<server::NotifyEntityMove>& acEvent)
     {
-        Moves.emplace_back(acEvent.get_id(), acEvent.get_position().get_x());
+        Moves.push_back({acEvent.get_id(), acEvent.get_position().get_x(), acEvent.get_aim_pitch()});
     }
     void OnCharacterState(const PacketEvent<server::NotifyCharacterState>& acEvent)
     {
@@ -160,6 +184,16 @@ struct TestClient final : Client
                                         [&](const Character& acCharacter) { return acCharacter.Id == acEvent.get_id(); });
         States.push_back({acEvent.get_id(), acEvent.get_locomotion(), acEvent.get_upper_body(), acEvent.get_weapon_state(),
                           acEvent.get_weapon(), loaded});
+    }
+    void OnVehicleLoad(const PacketEvent<server::NotifyVehicleLoad>& acEvent) { VehicleLoads.push_back(acEvent.get_id()); }
+    void OnVehicleEnter(const PacketEvent<server::NotifyVehicleEnter>& acEvent)
+    {
+        VehicleEnters.emplace_back(acEvent.get_character_id(), acEvent.get_vehicle_id());
+    }
+    void OnVehicleExit(const PacketEvent<server::NotifyVehicleExit>& acEvent) { VehicleExits.push_back(acEvent.get_character_id()); }
+    void OnVehicleControl(const PacketEvent<server::NotifyVehicleControlAssigned>& acEvent)
+    {
+        Driving.push_back(acEvent.get_vehicle_id());
     }
     void OnCharacterShot(const PacketEvent<server::NotifyCharacterShot>& acEvent)
     {
@@ -192,7 +226,13 @@ struct TestClient final : Client
     };
     std::optional<uint64_t> OwnCharacter;
     std::vector<Character> Characters; // the others', as the session loads them
-    std::vector<std::pair<uint64_t, float>> Moves;
+    struct MoveSeen
+    {
+        uint64_t Id;
+        float X;
+        float AimPitch;
+    };
+    std::vector<MoveSeen> Moves;
 
     struct State
     {
@@ -211,6 +251,11 @@ struct TestClient final : Client
         uint32_t Count;
     };
     std::vector<Shot> Shots;
+
+    std::vector<uint64_t> VehicleLoads;
+    std::vector<std::pair<uint64_t, uint64_t>> VehicleEnters; // character, vehicle
+    std::vector<uint64_t> VehicleExits;
+    std::vector<uint64_t> Driving; // the vehicles the session made this player the driver of
 
 private:
     entt::dispatcher m_dispatcher;
@@ -394,12 +439,16 @@ TEST_CASE("Players get each other's characters with their items and look, then t
         CHECK((id & 0xFFFF'FFFFull) < 10'000'000);
     }
 
-    // A newcomer moves right away; the host gets it (and has to cope with its character still spawning).
-    guest.Move(3.f, 1);
+    // A newcomer moves right away; the host gets it (and has to cope with its character still spawning), with where
+    // the guest aims.
+    guest.Move(3.f, 1, 0.25f);
     REQUIRE(Pump(all, [&] {
         return std::any_of(host.Moves.begin(), host.Moves.end(),
-                           [&](const auto& acMove) { return acMove.first == *guest.OwnCharacter && acMove.second == 3.f; });
+                           [&](const auto& acMove) { return acMove.Id == *guest.OwnCharacter && acMove.X == 3.f; });
     }));
+    const auto move = std::find_if(host.Moves.begin(), host.Moves.end(),
+                                   [&](const auto& acMove) { return acMove.Id == *guest.OwnCharacter && acMove.X == 3.f; });
+    CHECK(move->AimPitch == 0.25f);
 
     HostSession::Shutdown();
 }
@@ -471,6 +520,71 @@ TEST_CASE("Players see each other's stance and weapon, also when they arrive lat
     CHECK(guest.Shots[0].Count == 3);
     CHECK(guest.Shots[1].Count == 30);
     CHECK(host.Shots.empty());
+
+    HostSession::Shutdown();
+}
+
+TEST_CASE("A vehicle stays one vehicle for everyone, whoever gets in and out of it")
+{
+    HostSession::Settings settings;
+    settings.Port = kPort + 40;
+    settings.Password = "secret";
+    settings.HostToken = "host-token";
+    REQUIRE(HostSession::Start(settings));
+
+    TestClient host("Host", "", "host-token");
+    TestClient guest("Guest", "secret");
+    std::vector<TestClient*> all{&host, &guest};
+
+    ISteamNetworkingSockets* pSockets = nullptr;
+    HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
+    REQUIRE(HostSession::OpenLocalConnection(pSockets, connection));
+    REQUIRE(host.Adopt(pSockets, connection));
+    guest.Connect("127.0.0.1:" + std::to_string(HostSession::GetPort()));
+    REQUIRE(Pump(all, [&] { return host.Accepted.has_value() && guest.Accepted.has_value(); }));
+    host.SpawnCharacter(1.f, {}, {});
+    guest.SpawnCharacter(2.f, {}, {});
+    REQUIRE(Pump(all, [&] { return host.OwnCharacter && guest.OwnCharacter; }));
+
+    constexpr uint64_t kDriver = 0xb000b1d029d0cea0ull; // seat_front_left
+    constexpr uint64_t kPassenger = 0x1234ull;
+
+    // The host drives a car of their own game: the guest's game gets it once, with the host in it, and the host is
+    // its driver, under the session's id.
+    host.EnterVehicle(0, kDriver);
+    REQUIRE(Pump(all, [&] { return host.Driving.size() == 1 && guest.VehicleEnters.size() == 1; }));
+    const auto car = host.Driving[0];
+    REQUIRE(guest.VehicleLoads.size() == 1);
+    CHECK(guest.VehicleLoads[0] == car);
+    CHECK(guest.VehicleEnters[0] == std::make_pair(*host.OwnCharacter, car));
+
+    // The guest rides along in their copy; the host's game seats them in the host's car.
+    guest.EnterVehicle(car, kPassenger);
+    REQUIRE(Pump(all, [&] { return host.VehicleEnters.size() == 1; }));
+    CHECK(host.VehicleEnters[0] == std::make_pair(*guest.OwnCharacter, car));
+    CHECK(guest.Driving.empty());
+
+    // The driver gets out first, then the passenger.
+    host.ExitVehicle();
+    REQUIRE(Pump(all, [&] { return guest.VehicleExits.size() == 1; }));
+    guest.ExitVehicle();
+    REQUIRE(Pump(all, [&] { return host.VehicleExits.size() == 1; }));
+
+    // Back in, by its id: the same car, no second one for the guest.
+    host.EnterVehicle(car, kDriver);
+    REQUIRE(Pump(all, [&] { return host.Driving.size() == 2 && guest.VehicleEnters.size() == 2; }));
+    CHECK(host.Driving[1] == car);
+    CHECK(guest.VehicleEnters[1] == std::make_pair(*host.OwnCharacter, car));
+    host.ExitVehicle();
+    REQUIRE(Pump(all, [&] { return guest.VehicleExits.size() == 2; }));
+
+    // The guest takes the wheel of it: now they drive it, the host's game seats them as its driver.
+    guest.EnterVehicle(car, kDriver);
+    REQUIRE(Pump(all, [&] { return guest.Driving.size() == 1 && host.VehicleEnters.size() == 2; }));
+    CHECK(guest.Driving[0] == car);
+    CHECK(host.VehicleEnters[1] == std::make_pair(*guest.OwnCharacter, car));
+    CHECK(guest.VehicleLoads.size() == 1);
+    CHECK(host.VehicleLoads.empty());
 
     HostSession::Shutdown();
 }

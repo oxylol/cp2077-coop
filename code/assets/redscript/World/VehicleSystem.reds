@@ -73,12 +73,23 @@ public native class VehicleSystem extends IScriptable {
         request.mountData = data;
         GameInstance.GetMountingFacility(game).Mount(request);
 
+        CoopClearForVehicle(character);
         let animVariables = VehicleComponent.SetAnimsetOverrideForPassenger(character, vehicle_id, sit_position, 1.0);
         let workspots = GameInstance.GetWorkspotSystem(game);
         let synchronized: array<EntityID>;
         workspots.StopNpcInWorkspot(character);
-        workspots.MountToVehicle(vehicle, character, 0.0, 0.0, n"OccupantSlots", sit_position, synchronized, n"default", animVariables);
-        return true;
+        let seated = workspots.MountToVehicle(vehicle, character, 0.0, 0.0, n"OccupantSlots", sit_position, synchronized, n"default", animVariables);
+
+        // In the vehicle stance, as NPCs ride (NPCStatesComponent): its animations are the seat's, driving or riding.
+        this.ApplyVehicleStance(character, true);
+        return seated;
+    }
+
+    private func ApplyVehicleStance(character: ref<GameObject>, inVehicle: Bool) -> Void {
+        let stance = new AnimFeature_NPCState();
+        stance.state = inVehicle ? EnumInt(gamedataNPCStanceState.Vehicle) : EnumInt(gamedataNPCStanceState.Stand);
+        AnimationControllerComponent.ApplyFeature(character, n"stanceState", stance);
+        AnimationControllerComponent.SetAnimWrapperWeightOnOwnerAndItems(character, n"inVehicle", inVehicle ? 1.0 : 0.0);
     }
 
     // Takes another player's character out of its seat.
@@ -102,6 +113,11 @@ public native class VehicleSystem extends IScriptable {
             request.mountData = data;
             mounting.Unmount(request);
         }
+        this.ApplyVehicleStance(character, false);
+
+        // Upright, facing where it faced: in its seat it leaned with the car, and that tilt would stay.
+        let facing = Vector4.ToRotation(Vector4.Normalize2D(character.GetWorldForward()));
+        GameInstance.GetTeleportationFacility(game).Teleport(character, character.GetWorldPosition(), facing);
         return true;
     }
 

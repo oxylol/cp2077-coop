@@ -18,8 +18,12 @@ struct CharacterSync : RED4ext::IScriptable
     void OnDisconnected();
 
     // From CharacterSync.reds: this player's state (ReadLocalState), and each shot they fire.
-    void SetLocalState(int32_t aLocomotion, int32_t aUpperBody, int32_t aWeaponState, Red::TweakDBID aWeapon);
+    void SetLocalState(int32_t aLocomotion, int32_t aUpperBody, int32_t aWeaponState, Red::TweakDBID aWeapon,
+                       float aAimPitch);
     void OnLocalShot();
+
+    // Where this player looks, up or down (radians), for their moves (NetworkWorldSystem::UpdatePlayerLocation).
+    float GetAimPitch() const noexcept { return m_aimPitch; }
 
 protected:
     void HandleCharacterState(const PacketEvent<server::NotifyCharacterState>& aMessage);
@@ -43,6 +47,7 @@ private:
     std::optional<State> m_sent;
     uint64_t m_sentId{0}; // the character m_sent was for
     uint32_t m_shots{0};
+    float m_aimPitch{0.f};
     flecs::system m_sender;
     flecs::system m_shower;
 };

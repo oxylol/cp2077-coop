@@ -115,7 +115,8 @@ void NetworkWorldSystem::DeSpawn(uint64_t aServerId) const
     {
         App::PuppetRegistry::Remove(pEntity->Id.hash);
         const auto handle = Red::GetGameSystem<NetworkWorldSystem>();
-        Red::Detail::CallFunctionWithArgs(m_pDeletePuppet, handle, pEntity->Id);
+        if (!pEntity->Owned)
+            Red::Detail::CallFunctionWithArgs(m_pDeletePuppet, handle, pEntity->Id);
     }
     else if (auto* pEntity = entity.get<SpawningComponent>())
     {
@@ -281,129 +282,75 @@ void NetworkWorldSystem::UpdatePlayerLocation() const
         return;
 
     auto puppet = Red::Cast<Red::game::Puppet>(player);
+    const auto pNetworkService = Core::Container::Get<NetworkService>();
+    const auto aimPitch = GetCharacterSync()->GetAimPitch();
 
-    // const auto mountingFacility = Red::GetGameSystem<Red::game::mounting::MountingFacility>();
-    // Red::game::mounting::MountingInfo mountingInfo;
-    // if (GetMountingInfo(mountingFacility, *puppet.instance, Red::CName("seat_front_left"), mountingInfo)) {
-    if (auto vehicle_id = GetVehicleSystem()->GetVehicleGameId())
+    // Driving: the vehicle goes where this player drives it, for everyone (the session made them its driver,
+    // VehicleSystem::HandleVehicleControlMessage), and the character with it.
+    const auto vehicleId = GetVehicleSystem()->GetVehicleGameId();
+    const auto remoteVehicleId = GetVehicleSystem()->GetVehicleRemoteId();
+    if (vehicleId && remoteVehicleId)
     {
-        // auto vehicle = Red::Cast<Red::vehicle::BaseObject>(GetEntity(mountingInfo.parentId));
-        auto vehicle = Red::Cast<Red::vehicle::BaseObject>(GetEntity(*vehicle_id));
+        auto vehicle = Red::Cast<Red::vehicle::BaseObject>(GetEntity(*vehicleId));
         if (!vehicle)
         {
-            spdlog::info("Couldn't find vehicle: {}", (*vehicle_id).hash);
+            spdlog::info("Couldn't find vehicle: {}", vehicleId->hash);
             return;
         }
-        if (auto remote_id = GetVehicleSystem()->GetVehicleRemoteId(); remote_id != std::nullopt)
-        {
-            auto transform = Red::WorldTransform();
 
-            transform = vehicle->rigidBody->currentTransform;
-
-            // const auto cEntityRotation = eulerAngles(Game::ToGlm(vehicle->placedComponent->worldTransform.Orientation));
-
-            // about the same
-            // transform = vehicle->worldTransform;
-
-            // about the same
-            // transform = vehicle->runtimeData->transform;
-
-            // try to get transform from move system
-            // seems to return 0 :/
-            // auto transform = Red::WorldTransform();
-            // const auto moveSystem = Red::GetGameSystem<Red::vehicle::MoveSystem>();
-            // // GetCurrentTransform
-            // reinterpret_cast<void (*)(const Red::vehicle::MoveSystem *, const Red::EntityID &, Red::WorldTransform*)>(*(uintptr_t*)(*(uintptr_t*)moveSystem + 0x250))(moveSystem, vehicle->id, &transform);
-
-            const auto cEntityPosition = transform.Position;
-            const auto cEntityRotation = eulerAngles(Game::ToGlm(transform.Orientation));
-            float speed = vehicle->rigidBody->velocity.Magnitude();
-
-            common::Vector3 pos;
-            pos.set_x(cEntityPosition.x);
-            pos.set_y(cEntityPosition.y);
-            pos.set_z(cEntityPosition.z);
-
-            common::Vector3 rot;
-            rot.set_x(cEntityRotation.x);
-            rot.set_y(cEntityRotation.y);
-            rot.set_z(cEntityRotation.z);
-
-            client::MoveEntityRequest request;
-            request.set_position(pos);
-            request.set_full_rotation(rot);
-            request.set_id(*remote_id);
-            request.set_speed(speed);
-            request.set_tick(GetTick());
-
-            const auto pNetworkService = Core::Container::Get<NetworkService>();
-            pNetworkService->Send(request);
-
-            client::MoveEntityRequest characterRequest;
-            characterRequest.set_position(pos);
-            characterRequest.set_rotation(cEntityRotation.z);
-            characterRequest.set_id(*GetRemotePlayerId());
-            characterRequest.set_speed(speed);
-            characterRequest.set_tick(GetTick());
-
-            pNetworkService->Send(characterRequest);
-        }
-    }
-    else
-    {
-        // localTransform is not updated as the player walks (V moves via the character
-        // controller), so it stays frozen at its spawn value. Rotation already reads
-        // worldTransform on the next line - use it for position too.
-        const auto cEntityPosition = puppet->placedComponent->worldTransform.Position;
-        const auto cEntityRotation = eulerAngles(Game::ToGlm(puppet->placedComponent->worldTransform.Orientation));
-        float speed = puppet->moveComponent->speed.Magnitude();
+        const auto& transform = vehicle->rigidBody->currentTransform;
+        const auto cEntityPosition = transform.Position;
+        const auto cEntityRotation = eulerAngles(Game::ToGlm(transform.Orientation));
+        float speed = vehicle->rigidBody->velocity.Magnitude();
 
         common::Vector3 pos;
         pos.set_x(cEntityPosition.x);
         pos.set_y(cEntityPosition.y);
         pos.set_z(cEntityPosition.z);
 
+        common::Vector3 rot;
+        rot.set_x(cEntityRotation.x);
+        rot.set_y(cEntityRotation.y);
+        rot.set_z(cEntityRotation.z);
+
         client::MoveEntityRequest request;
         request.set_position(pos);
-        request.set_rotation(cEntityRotation.z);
-        request.set_id(*GetRemotePlayerId());
+        request.set_full_rotation(rot);
+        request.set_id(*remoteVehicleId);
         request.set_speed(speed);
         request.set_tick(GetTick());
-
-        const auto pNetworkService = Core::Container::Get<NetworkService>();
         pNetworkService->Send(request);
+
+        client::MoveEntityRequest characterRequest;
+        characterRequest.set_position(pos);
+        characterRequest.set_rotation(cEntityRotation.z);
+        characterRequest.set_id(*GetRemotePlayerId());
+        characterRequest.set_speed(speed);
+        characterRequest.set_tick(GetTick());
+        characterRequest.set_aim_pitch(aimPitch);
+        pNetworkService->Send(characterRequest);
+        return;
     }
 
-    // if (GetEntityByServerId(*GetRemotePlayerId()).get_mut<InterpolationComponent>()->Attached)
-    // {
-    //     auto vehicle_id = GetVehicleSystem()->GetVehicle(player->id);
-    //     if (!vehicle_id)
-    //     {
-    //         spdlog::warn("No vehicle for player({})", player->id.hash);
-    //         return;
-    //     }
-    //     auto entity = GetEntity(vehicle_id);
-    //     if (!entity)
-    //     {
-    //         spdlog::warn("No entity for vehicle({})", vehicle_id.hash);
-    //         return;
-    //     }
-    //     auto vehicle = Red::Cast<Red::vehicle::BaseObject>(entity);
-    //     if (!vehicle)
-    //     {
-    //         spdlog::warn("Entity is not vehicle");
-    //         return;
-    //     }
-    //     else
-    //     {
-    //         // if (vehicle->placedComponent) {
-    //             // entityPosition = vehicle->placedComponent->localTransform.Position;
-    //         // } else {
-    //             // entityPosition = vehicle->worldTransform.Position;
-    //             entityPosition = vehicle->rigidBody->worldPosition;
-    //         // }
-    //     }
-    // }
+    // On foot, or riding along: where the character is (in a seat, it moves with the vehicle). localTransform isn't
+    // updated as the player walks (V moves via the character controller): worldTransform is.
+    const auto cEntityPosition = puppet->placedComponent->worldTransform.Position;
+    const auto cEntityRotation = eulerAngles(Game::ToGlm(puppet->placedComponent->worldTransform.Orientation));
+    float speed = puppet->moveComponent->speed.Magnitude();
+
+    common::Vector3 pos;
+    pos.set_x(cEntityPosition.x);
+    pos.set_y(cEntityPosition.y);
+    pos.set_z(cEntityPosition.z);
+
+    client::MoveEntityRequest request;
+    request.set_position(pos);
+    request.set_rotation(cEntityRotation.z);
+    request.set_id(*GetRemotePlayerId());
+    request.set_speed(speed);
+    request.set_tick(GetTick());
+    request.set_aim_pitch(aimPitch);
+    pNetworkService->Send(request);
 }
 
 void NetworkWorldSystem::OnInitialize(const RED4ext::JobHandle& aJob)

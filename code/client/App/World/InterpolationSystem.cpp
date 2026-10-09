@@ -18,6 +18,7 @@
 #include "App/Components/EntityComponent.h"
 #include "Math/Math.h"
 #include "App/Components/InterpolationComponent.h"
+#include "App/Components/RemoteStateComponent.h"
 #include "App/Components/SpawningComponent.h"
 #include "Game/Utils.h"
 #include "Game/Movement.h"
@@ -63,19 +64,31 @@ void InterpolateEntity(flecs::entity aEntity, const EntityComponent& aEntityComp
         ratio = 1.0f / tickDelta * (tick - first.Tick);
     }
 
-    const auto pEntityStubSystem = Red::GetGameSystem<Red::game::IEntityStubSystem>();
-    const auto* pStub = pEntityStubSystem->FindStub(aEntityComponent.Id);
-    if (!pStub)
-        return;
+    // A player's own vehicle is no stub of ours: it's checked below, as every vehicle is.
+    if (!aEntityComponent.IsVehicle)
+    {
+        const auto pEntityStubSystem = Red::GetGameSystem<Red::game::IEntityStubSystem>();
+        if (!pEntityStubSystem->FindStub(aEntityComponent.Id))
+            return;
+    }
 
+    // Seated in a vehicle: the seat moves the character, until it's out.
     if (aEntity.has<AttachedComponent>())
+    {
+        if (aEntityComponent.Controller)
+            aEntityComponent.Controller->SetFrozen(true);
         return;
+    }
 
     const glm::vec3 position{Lerp(first.Position, second.Position, ratio)};
 
     if (aEntityComponent.IsVehicle)
     {
         const auto pSystem = Red::GetGameSystem<NetworkWorldSystem>();
+        // The vehicle this player drives goes where they drive it.
+        if (pSystem->GetVehicleSystem()->GetVehicleRemoteId() == aEntity.id())
+            return;
+
         const auto vehicle = Red::Cast<Red::vehicle::BaseObject>(pSystem->GetEntity(aEntityComponent.Id));
         if (vehicle)
         {
@@ -116,6 +129,7 @@ void InterpolateEntity(flecs::entity aEntity, const EntityComponent& aEntityComp
     {
         if (aEntityComponent.Controller)
         {
+            aEntityComponent.Controller->SetFrozen(false);
             const auto speed{Lerp(first.Velocity, second.Velocity, ratio)};
             const auto deltaAngle{DeltaAngle(first.Rotation.z, second.Rotation.z, true) * ratio};
             const auto direction = Mod(first.Rotation.z + deltaAngle, 2.f * static_cast<float>(Pi));
@@ -193,6 +207,14 @@ void InterpolationSystem::HandleNotifyEntityMove(const PacketEvent<server::Notif
 
     if (!entity)
         return;
+
+    // Ours: the vehicle this player drives (moves from its previous driver may still be on their way).
+    if (pSystem->GetVehicleSystem()->GetVehicleRemoteId() == aMessage.get_id())
+        return;
+
+    // Where a character aims, up or down (CharacterSync shows it).
+    if (auto* pState = entity.get_mut<RemoteStateComponent>())
+        pState->AimPitch = aMessage.get_aim_pitch();
 
     // A character still spawning in this game has no InterpolationComponent yet (it comes with the EntityComponent
     // once the game object exists), and a newcomer's first move arrives right after its spawn: start it here, so the

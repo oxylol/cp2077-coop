@@ -13,7 +13,14 @@
 #include "App/Components/AttachedComponent.h"
 #include "App/Components/SpawningComponent.h"
 #include "App/Components/InterpolationComponent.h"
+#include <RED4ext/Scripting/Natives/Generated/vehicle/MoveSystem.hpp>
 
+// As InterpolationSystem.cpp switches it on for vehicles it moves.
+static void SetSimpleMovement(Red::vehicle::IMoveSystem* apMoveSystem, const Red::EntityID& aEntityId, bool aEnabled)
+{
+    reinterpret_cast<void (*)(Red::vehicle::IMoveSystem*, const Red::EntityID&, bool)>(
+        *(uintptr_t*)(*(uintptr_t*)apMoveSystem + 0x1F0))(apMoveSystem, aEntityId, aEnabled);
+}
 
 void VehicleSystem::OnWorldAttached(RED4ext::world::RuntimeScene* aScene)
 {
@@ -30,6 +37,7 @@ void VehicleSystem::OnDisconnected()
 {
     m_vehicleRemoteId = std::nullopt;
     m_vehicleGameId = std::nullopt;
+    m_pendingMounts.clear();
 }
 
 void VehicleSystem::OnInitialize(const RED4ext::JobHandle& aJob)
@@ -63,18 +71,21 @@ void VehicleSystem::OnVehicleEnter(Red::EntityID aVehicle, const Red::TweakDBID&
         return;
 
     const auto handle = Red::GetGameSystem<NetworkWorldSystem>();
+    if (!handle->GetRemotePlayerId())
+        return;
 
     client::EnterVehicleRequest request;
     request.set_id(*handle->GetRemotePlayerId());
     request.set_vehicle_id(aVehicleTdbid.value);
     request.set_sit_id(aName.hash);
 
+    // The session knows the vehicle when it's a copy of another player's, or this player's own from before (since
+    // they first drove it, HandleVehicleControlMessage): it's the same vehicle again, not a new one for the others.
     const auto serverVehicle = handle->FindEntity(aVehicle);
     if (serverVehicle)
     {
         request.set_remote_vehicle_id(serverVehicle);
-
-        m_vehicleGameId = std::nullopt;
+        spdlog::info("[VehicleSystem] entering vehicle {:x} ({})", serverVehicle.id(), aName.ToString());
     }
     else
     {
@@ -86,9 +97,11 @@ void VehicleSystem::OnVehicleEnter(Red::EntityID aVehicle, const Red::TweakDBID&
         position.set_z(aPostion.Z);
         request.set_position(position);
         request.set_rotation(cEntityRotation.z);
-
-        m_vehicleGameId = aVehicle;
+        spdlog::info("[VehicleSystem] entering a new vehicle ({})", aName.ToString());
     }
+
+    m_vehicleGameId = aVehicle;
+    m_vehicleRemoteId = std::nullopt; // until the session makes this player its driver
 
     pNetworkService->Send(request);
 }
@@ -106,6 +119,8 @@ void VehicleSystem::OnVehicleExit()
     client::ExitVehicleRequest request;
 
     const auto handle = Red::GetGameSystem<NetworkWorldSystem>();
+    if (!handle->GetRemotePlayerId())
+        return;
     request.set_id(*handle->GetRemotePlayerId());
 
     pNetworkService->Send(request);
@@ -142,69 +157,73 @@ bool VehicleSystem::HandleVehicleLoadMessage(const PacketEvent<server::NotifyVeh
 
 bool VehicleSystem::HandleVehicleEnterMessage(const PacketEvent<server::NotifyVehicleEnter>& aMessage)
 {
-    spdlog::info("[VehicleSystem] HandleVehicleEnterMessage");
+    spdlog::info("[VehicleSystem] HandleVehicleEnterMessage: character {:x} into vehicle {:x}", aMessage.get_character_id(),
+                 aMessage.get_vehicle_id());
 
     const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
 
     const auto sit = Red::CName(aMessage.get_sit_id());
     const auto character = worldSystem->GetEntityByServerId(aMessage.get_character_id());
-
-    if (m_vehicleRemoteId && aMessage.get_vehicle_id() == *m_vehicleRemoteId)
+    const auto vehicle = worldSystem->GetEntityByServerId(aMessage.get_vehicle_id());
+    if (!character.is_alive() || !vehicle.is_alive())
     {
-        DoMount(character, *m_vehicleGameId, sit);
+        spdlog::warn("[VehicleSystem] character {:x} or vehicle {:x} isn't known here", aMessage.get_character_id(),
+                     aMessage.get_vehicle_id());
+        return true;
     }
-    else
+
+    if (const auto* pVehicle = vehicle.get<EntityComponent>())
     {
-        const auto entity = worldSystem->GetEntityByServerId(aMessage.get_vehicle_id());
-        if (entity.has<EntityComponent>())
+        DoMount(character, pVehicle->Id, sit);
+    }
+    else if (const auto* pSpawning = vehicle.get<SpawningComponent>())
+    {
+        // Already there: its OnVehicleReady came and went with nobody to seat.
+        const auto id = pSpawning->Id;
+        if (worldSystem->GetEntity(id))
         {
-            DoMount(character, entity.get<EntityComponent>()->Id, sit);
+            Ready(vehicle, id);
+            DoMount(character, id, sit);
         }
         else
-        {
-            // spdlog::info("[VehicleSystem] * Queueing vehicle, server: {}", aMessage.get_vehicle_id());
-            const auto vehicle = worldSystem->GetEntityIdByServerId(aMessage.get_vehicle_id());
-            // spdlog::info("[VehicleSystem]                     entity: {}", vehicle.hash);
-            m_pendingMounts[vehicle].push_back(aMessage);
-        }
+            m_pendingMounts[id].push_back(aMessage);
     }
 
-    // 
-    // const auto sit = Red::CName(aMessage.get_sit_id());
-
-    // if (!Red::Detail::CallFunctionWithArgs(m_pEnterVehicle, handle, res, character, vehicle, sit))
-    //     return false;
-
     return true;
+}
+
+void VehicleSystem::Ready(flecs::entity aVehicle, Red::EntityID aGameId)
+{
+    if (aVehicle.has<EntityComponent>())
+        return;
+    aVehicle.remove<SpawningComponent>();
+    aVehicle.emplace<EntityComponent>(aGameId, true, nullptr);
 }
 
 void VehicleSystem::OnVehicleReady(const Red::EntityID& aVehicleEntityId)
 {
     spdlog::info("[VehicleSystem] OnVehicleReady");
 
-    if (m_pendingMounts.find(aVehicleEntityId) != m_pendingMounts.end())
-    {
-        const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
-
-        for (auto& message : m_pendingMounts[aVehicleEntityId])
-        {
-            const auto sit = Red::CName(message.get_sit_id());
-            const auto character = worldSystem->GetEntityByServerId(message.get_character_id());
-
-            auto vehicleEntity = worldSystem->GetEntityByServerId(message.get_vehicle_id());
-            vehicleEntity.emplace<EntityComponent>(aVehicleEntityId, true, nullptr);
-            vehicleEntity.remove<SpawningComponent>();
-
-            const auto vehicle = worldSystem->GetEntityIdByServerId(message.get_vehicle_id());
-
-            DoMount(character, vehicle, sit);
-        }
-
-        m_pendingMounts.erase(aVehicleEntityId);
-    }
-    else
+    const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
+    const auto vehicle = worldSystem->FindEntity(aVehicleEntityId);
+    if (!vehicle)
     {
         spdlog::info("[VehicleSystem] * Couldn't find vehicle: {}", aVehicleEntityId.hash);
+        return;
+    }
+    Ready(vehicle, aVehicleEntityId);
+
+    auto pending = m_pendingMounts.find(aVehicleEntityId);
+    if (pending == m_pendingMounts.end())
+        return;
+
+    const auto messages = std::move(pending.value());
+    m_pendingMounts.erase(pending);
+    for (const auto& message : messages)
+    {
+        const auto character = worldSystem->GetEntityByServerId(message.get_character_id());
+        if (character.is_alive())
+            DoMount(character, aVehicleEntityId, Red::CName(message.get_sit_id()));
     }
 }
 
@@ -227,7 +246,37 @@ bool VehicleSystem::HandleVehicleExitMessage(const PacketEvent<server::NotifyVeh
 
 bool VehicleSystem::HandleVehicleControlMessage(const PacketEvent<server::NotifyVehicleControlAssigned>& aMessage)
 {
+    // This player drives it now; out already, nothing to do.
+    if (!m_vehicleGameId)
+        return true;
+
     m_vehicleRemoteId = aMessage.get_vehicle_id();
+    spdlog::info("[VehicleSystem] driving vehicle {:x}", *m_vehicleRemoteId);
+
+    // Known under the session's id from now on: getting back in, or someone else getting in, is the same vehicle for
+    // everyone (one copy each, not one more every time). The others' moves don't move it while this player drives
+    // (InterpolationSystem), and it's driven by its physics again: a copy was made kinematic for its previous driver.
+    const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
+    auto vehicle = worldSystem->GetEntityByServerId(*m_vehicleRemoteId);
+    const bool own = !vehicle.is_alive(); // not a copy of another player's
+    if (own)
+        vehicle = worldSystem->make_alive(*m_vehicleRemoteId);
+    Ready(vehicle, *m_vehicleGameId);
+    if (own)
+        vehicle.get_mut<EntityComponent>()->Owned = true;
+    if (auto* pInterpolation = vehicle.get_mut<InterpolationComponent>())
+        pInterpolation->TimePoints.clear();
+
+    static Core::RawFunc<4039776020UL, void (*)(Red::vehicle::BaseObject*, bool)> SetIsPlayerControlled;
+    static Core::RawFunc<1585713002UL, void (*)(Red::vehicle::BaseObject*, bool)> SetKinematic;
+    if (const auto pVehicle = Red::Cast<Red::vehicle::BaseObject>(worldSystem->GetEntity(*m_vehicleGameId)))
+    {
+        if (const auto pMoveSystem = Red::GetGameSystem<Red::vehicle::IMoveSystem>())
+            SetSimpleMovement(pMoveSystem, *m_vehicleGameId, false);
+        SetKinematic(pVehicle, false);
+        SetIsPlayerControlled(pVehicle, true);
+    }
+
     return true;
 }
 
@@ -244,8 +293,10 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
 
     aCharacter.add<AttachedComponent>();
 
+    // Moved by its driver's updates, unless this player drives it.
+    const bool ours = m_vehicleRemoteId && m_vehicleGameId == aVehicle;
     const auto vehicle = Red::Cast<Red::vehicle::WheeledBaseObject>(worldSystem->GetEntity(aVehicle));
-    if (vehicle && (!m_vehicleGameId || *m_vehicleGameId != aVehicle))
+    if (vehicle && !ours)
     {
         // called from vehicle::actions::DriveAction::OnStart
         // static Core::RawFunc<4018412273UL, void (*)(Red::move::Component *, IMoveController &)> AttachLocomotionController

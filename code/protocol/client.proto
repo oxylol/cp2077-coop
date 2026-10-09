@@ -33,6 +33,7 @@ message MoveEntityRequest {
     float speed = 4;
     common.Vector3 full_rotation = 5;
     uint64 tick = 6;
+    float aim_pitch = 7; // a character's: where the player's camera looks, up or down (radians, up positive)
 }
 
 message EnterVehicleRequest {

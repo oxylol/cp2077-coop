@@ -30,6 +30,7 @@ void ReplicateMovementComponent(flecs::entity aEntity, const MovementComponent& 
     message.set_position(pos);
     message.set_tick(aComponent.Tick);
     message.set_speed(aComponent.Velocity);
+    message.set_aim_pitch(aComponent.AimPitch);
 
     aEntity.world().each(
         [aEntity, &message](flecs::entity player, const PlayerComponent& aPlayerComponent)

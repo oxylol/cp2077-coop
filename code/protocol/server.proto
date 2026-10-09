@@ -62,6 +62,7 @@ message NotifyEntityMove {
     uint64 tick = 4;
     float speed = 5;
     common.Vector3 full_rotation = 6;
+    float aim_pitch = 7;
 }
 
 message NotifyPlayerJoined {

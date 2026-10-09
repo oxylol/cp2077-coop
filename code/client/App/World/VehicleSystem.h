@@ -31,6 +31,8 @@ protected:
     bool HandleVehicleControlMessage(const PacketEvent<server::NotifyVehicleControlAssigned>& aMessage);
 
     void DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Red::CName aSit);
+    // The vehicle's game object exists: it's moved and seated in from now on.
+    static void Ready(flecs::entity aVehicle, Red::EntityID aGameId);
 
 private:
     bool m_ready{false};

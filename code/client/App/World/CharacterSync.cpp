@@ -65,12 +65,15 @@ void CharacterSync::OnDisconnected()
     m_local.reset();
     m_sent.reset();
     m_shots = 0;
+    m_aimPitch = 0.f;
 }
 
-void CharacterSync::SetLocalState(int32_t aLocomotion, int32_t aUpperBody, int32_t aWeaponState, Red::TweakDBID aWeapon)
+void CharacterSync::SetLocalState(int32_t aLocomotion, int32_t aUpperBody, int32_t aWeaponState, Red::TweakDBID aWeapon,
+                                  float aAimPitch)
 {
     m_local = State{static_cast<uint32_t>(aLocomotion), static_cast<uint32_t>(aUpperBody),
                     static_cast<uint32_t>(aWeaponState), aWeapon.value};
+    m_aimPitch = aAimPitch;
 }
 
 void CharacterSync::OnLocalShot()
@@ -123,16 +126,26 @@ void CharacterSync::SendLocal()
 
 void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity, RemoteStateComponent& aState)
 {
-    // In a car the seat's animations take over: everything is shown again once out.
+    auto id = acEntity.Id;
+
+    // In a car the seat's animations take over (VehicleSystem.reds puts the weapon away and clears the stances):
+    // everything is shown again once out.
     if (aEntity.has<AttachedComponent>())
     {
+        if (aState.Shown)
+        {
+            bool armed = false;
+            float pitch = 0.f;
+            if (!Red::CallVirtual(this, "ApplyAim", id, armed, pitch))
+                Failed("ApplyAim");
+        }
         aState.Shown = false;
         aState.WeaponInHand = false;
         aState.WeaponAttempts = 0;
+        aState.InCombatMode = false;
         return;
     }
 
-    auto id = acEntity.Id;
     const bool refresh = ++aState.SinceRefresh >= kRefreshRuns;
     if (refresh)
     {
@@ -191,6 +204,11 @@ void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity,
         else
             Failed("ApplyStance");
     }
+
+    // Where they aim, while their weapon is out: every run, as they move and look around.
+    auto pitch = aState.AimPitch;
+    if (!Red::CallVirtual(this, "ApplyAim", id, armed, pitch))
+        Failed("ApplyAim");
 }
 
 void CharacterSync::HandleCharacterState(const PacketEvent<server::NotifyCharacterState>& aMessage)

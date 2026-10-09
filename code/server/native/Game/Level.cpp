@@ -252,6 +252,7 @@ void Level::HandleMoveEntityRequest(PacketEvent<client::MoveEntityRequest>& aMes
     component.Position = {pos.get_x(), pos.get_y(), pos.get_z()};
     component.Velocity = aMessage.get_speed();
     component.Tick = aMessage.get_tick();
+    component.AimPitch = aMessage.get_aim_pitch();
 
     if constexpr (IsDebug())
     {

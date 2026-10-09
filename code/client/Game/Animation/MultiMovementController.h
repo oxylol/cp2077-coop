@@ -47,6 +47,13 @@ struct MultiMovementController
     virtual void GetAnimationParameters(AnimationData& animationData);
 
     void SetTransform(const Red::Vector4& aPosition, float angle, float speed);
+    // Frozen: doesn't move or turn the character, nor walk it (it's seated in a vehicle).
+    void SetFrozen(bool aFrozen)
+    {
+        m_frozen = aFrozen;
+        if (aFrozen)
+            m_speed = 0.f;
+    }
 
     float GetAnimLength(Red::CName aName) const;
 
@@ -60,6 +67,7 @@ struct MultiMovementController
     Red::Vector4 m_position;
     float m_angle;
     float m_speed = 0.f;
+    bool m_frozen = false;
     AnimationDriver m_animationDriver;
     UniquePtr<States::Base> m_pState;
 };

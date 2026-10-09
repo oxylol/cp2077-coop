@@ -8,6 +8,7 @@ struct RemoteStateComponent
     uint32_t UpperBody{0};
     uint32_t WeaponState{0};
     uint64_t Weapon{0};
+    float AimPitch{0.f}; // from its moves (server::NotifyEntityMove)
 
     // What the character shows: nothing yet until Shown.
     bool Shown{false};

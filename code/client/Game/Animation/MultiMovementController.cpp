@@ -35,18 +35,25 @@ void MultiMovementController::Tick(float delta)
 
 void MultiMovementController::GetDeltaTransform(Red::Vector4& positionDelta, Red::Quaternion& rotationDelta)
 {
+    // Seated in a vehicle, the seat moves the character.
+    if (m_frozen)
+    {
+        positionDelta = {0.f, 0.f, 0.f, 0.f};
+        rotationDelta = Game::ToRed(glm::quat(glm::vec3(0.f)));
+        return;
+    }
+
     const auto& rawPosition = m_pComponent->owner->placedComponent->localTransform.Position;
     const auto& rawRotation = m_pComponent->owner->placedComponent->localTransform.Orientation;
     const glm::vec3 pos = Game::ToGlm(rawPosition);
     const auto rot = Game::ToGlm(rawRotation);
 
-    auto angles = eulerAngles(rot);
-    angles.z = m_angle - angles.z;
-
     const Red::Vector4 position{pos.x, pos.y, pos.z, 0.f};
 
     positionDelta = {m_position.X - position.X, m_position.Y - position.Y, m_position.Z - position.Z, 0.f};
-    rotationDelta = Game::ToRed(glm::quat(angles));
+    // Only the heading turns. The delta used to carry the body's current pitch and roll too, applied again every
+    // frame: a character out of a tilted car seat compounded its tilt and spun.
+    rotationDelta = Game::ToRed(glm::quat(glm::vec3(0.f, 0.f, m_angle - eulerAngles(rot).z)));
 }
 
 void MultiMovementController::sub_28(bool& unk)
