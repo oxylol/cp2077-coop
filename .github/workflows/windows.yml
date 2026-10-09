@@ -57,9 +57,11 @@ jobs:
       - name: 'Setup xmake'
         uses: xmake-io/github-action-setup-xmake@v1
         with:
-          xmake-version: 2.9.6 # Sync with cache key too
+          # 2.9.6 turns MSVC 14.43+ (the runner's VS 2022 17.14 has 14.44) into the nonexistent CMake
+          # toolset v144; 2.9.9 maps 14.40-14.49 to v143.
+          xmake-version: 2.9.9 # Sync with cache key too
           actions-cache-folder: '.xmake-cache' # This doesn't cache dependencies, only xmake itself
-          actions-cache-key: ${{ runner.os }}-xmake-cache-2.9.6
+          actions-cache-key: ${{ runner.os }}-xmake-cache-2.9.9
 
       - name: 'Configure xmake and install dependencies'
         run: xmake config --arch=${{ matrix.arch }} --mode=${{ matrix.mode }} --vs_sdkver=10.0.19041.0 --yes
