@@ -5,7 +5,7 @@ target("NetPack")
     add_files("**.cpp", "**.cc")
     set_group("Tools")
     add_headerfiles("**.h", "**.hpp", "**.inl")
-    set_policy("build.across_targets_in_parallel", false)
+    set_policy("build.fence", true) -- dependents wait until it is built (generated code)
 
     set_pcxxheader("NetPackPCH.h")
     add_includedirs(
