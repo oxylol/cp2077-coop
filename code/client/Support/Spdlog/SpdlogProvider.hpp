@@ -24,6 +24,7 @@ public:
 
 protected:
     void OnInitialize() override;
+    void OnShutdown() override;
 
     std::filesystem::path m_logPath;
 };

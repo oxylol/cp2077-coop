@@ -36,4 +36,5 @@ foreach ($name in $Names) {
 
 Write-Host ""
 Write-Host "In '$($Names[0])': load a save, hold '/' to host. In '$($Names[1])': load a save, hold '.' to join."
-Write-Host "Logs: <game>\red4ext\plugins\zzzCyberpunkCoop\CyberpunkCoop.log. Don't save in both games at once: they share the save folder."
+Write-Host "Logs: <game>\red4ext\plugins\zzzCyberpunkCoop\CyberpunkCoop.log (first game) and CyberpunkCoop-2.log (second)."
+Write-Host "Don't save in both games at once: they share the save folder."

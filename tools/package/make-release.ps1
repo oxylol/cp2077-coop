@@ -10,7 +10,7 @@
 # The zip, for the game folder:
 #   bin/, engine/, r6/, red4ext/    the requirements, as their own zips lay them out
 #   red4ext/plugins/zzzCyberpunkCoop/
-#     CyberpunkCoop.dll, coop.ini, README.txt, LICENSE.md, THIRD_PARTY.txt, licenses/
+#     CyberpunkCoop.dll (+ .pdb), coop.ini, README.txt, LICENSE.md, THIRD_PARTY.txt, licenses/
 #     assets/redscript, assets/Tweaks, assets/Inputs, assets/Archives   (where a release build looks for them)
 param(
     [string]$Version = "dev",
@@ -122,8 +122,14 @@ if ($hashesChanged) {
     Write-Host "requirements.json updated with the new hashes: check them, then commit." -ForegroundColor Yellow
 }
 
-# The mod
+# The mod, with its debug symbols: a crash report in its log then names functions and source lines.
 Copy-Item $Dll $plugin
+$pdb = [System.IO.Path]::ChangeExtension($Dll, ".pdb")
+if (Test-Path $pdb) {
+    Copy-Item $pdb $plugin
+} else {
+    Write-Host "No $pdb: crash reports will only have offsets." -ForegroundColor Yellow
+}
 Copy-Item (Join-Path $Root "code/assets/coop.ini") $plugin
 Copy-Item (Join-Path $Root "LICENSE.md") $plugin
 (Get-Content (Join-Path $PSScriptRoot "README.txt") -Raw).Replace("{VERSION}", $Version) |

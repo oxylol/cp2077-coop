@@ -33,7 +33,8 @@ target("Client")
         "Powrprof",
         "Cfgmgr32",
         "Propsys",
-        "delayimp")
+        "delayimp",
+        "dbghelp")
 
     add_deps("Common", "Protocol", "Server.Core", "RED4ext.SDK", "redscript", "Archives", "Inputs", "Tweaks")
 

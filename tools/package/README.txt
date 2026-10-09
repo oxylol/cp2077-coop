@@ -26,7 +26,8 @@ PLAY
   Leave:  hold "/"  (when the host leaves, the session ends for everyone)
 
 PROBLEMS
-  The mod's log: red4ext\plugins\zzzCyberpunkCoop\CyberpunkCoop.log
+  The mod's log: red4ext\plugins\zzzCyberpunkCoop\CyberpunkCoop.log (a second game on the same PC writes
+  CyberpunkCoop-2.log). When the game crashes, where it crashed is at its end ("[crash]" lines).
   RED4ext's logs: red4ext\logs
   Scripts not compiling: r6\logs\redscript_rCURRENT.log
   Report them at https://github.com/oxylol/cp2077-coop/issues
