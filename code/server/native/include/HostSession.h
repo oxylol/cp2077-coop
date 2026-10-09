@@ -25,8 +25,10 @@ struct Settings
 
 // False when no port could be opened.
 bool Start(const Settings& acSettings);
-// Ends the session: every player is disconnected.
+// Ends the session: every player is disconnected. The port stays open a second longer (Update()) so they learn it.
 void Stop();
+// Ends it now, and a just-ended one too, without waiting for the notices: when the game (or a test) is done.
+void Shutdown();
 // Once per frame while running.
 void Update();
 bool IsRunning();

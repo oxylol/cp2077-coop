@@ -17,8 +17,19 @@ static thread_local Client* s_pClient = nullptr;
 // callback, whichever of them calls it: the host's game runs both. So each connection carries its owner in its user
 // data (set when it's created, or on the listen socket, which accepted connections inherit), and the owner is only
 // called while it's alive.
-static std::mutex s_liveClientsLock;
-static std::unordered_set<const Client*> s_liveClients;
+//
+// Never destroyed: a Client that outlives it at exit (one held by a static, like a session that's just ending) still
+// unregisters itself, whatever order the statics of different files are destroyed in.
+struct LiveClients
+{
+    std::mutex Lock;
+    std::unordered_set<const Client*> Set;
+};
+static LiveClients& GetLiveClients()
+{
+    static auto* s_pLive = new LiveClients;
+    return *s_pLive;
+}
 
 Client::Client(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     : m_clientIdentifier(aClientIdentifier)
@@ -34,15 +45,17 @@ Client::Client(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     uv_loop_init(pLoop);
     pLoop->data = this;
 
-    std::scoped_lock _(s_liveClientsLock);
-    s_liveClients.insert(this);
+    auto& live = GetLiveClients();
+    std::scoped_lock _(live.Lock);
+    live.Set.insert(this);
 }
 
 Client::~Client()
 {
     {
-        std::scoped_lock _(s_liveClientsLock);
-        s_liveClients.erase(this);
+        auto& live = GetLiveClients();
+        std::scoped_lock _(live.Lock);
+        live.Set.erase(this);
     }
 
     // Not Close(): it calls OnDisconnected(), a virtual whose override is already gone at this point.
@@ -91,8 +104,9 @@ void Client::SteamNetConnectionStatusChangedCallback(SteamNetConnectionStatusCha
     {
         pClient = reinterpret_cast<Client*>(apInfo->m_info.m_nUserData);
 
-        std::scoped_lock _(s_liveClientsLock);
-        if (!s_liveClients.contains(pClient))
+        auto& live = GetLiveClients();
+        std::scoped_lock _(live.Lock);
+        if (!live.Set.contains(pClient))
             pClient = nullptr;
     }
 

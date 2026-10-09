@@ -21,8 +21,19 @@ static thread_local Server* s_pServer = nullptr;
 // callback, whichever of them calls it: the host's game runs both. So each connection carries its owner in its user
 // data (set when it's created, or on the listen socket, which accepted connections inherit), and the owner is only
 // called while it's alive.
-static std::mutex s_liveServersLock;
-static std::unordered_set<const Server*> s_liveServers;
+//
+// Never destroyed: a Server that outlives it at exit (one held by a static, like a session that's just ending) still
+// unregisters itself, whatever order the statics of different files are destroyed in.
+struct LiveServers
+{
+    std::mutex Lock;
+    std::unordered_set<const Server*> Set;
+};
+static LiveServers& GetLiveServers()
+{
+    static auto* s_pLive = new LiveServers;
+    return *s_pLive;
+}
 
 Server::Server(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     : m_tickRate(10)
@@ -37,15 +48,17 @@ Server::Server(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     m_listenSock = k_HSteamListenSocket_Invalid;
     m_pollGroup = k_HSteamNetPollGroup_Invalid;
 
-    std::scoped_lock _(s_liveServersLock);
-    s_liveServers.insert(this);
+    auto& live = GetLiveServers();
+    std::scoped_lock _(live.Lock);
+    live.Set.insert(this);
 }
 
 Server::~Server()
 {
     {
-        std::scoped_lock _(s_liveServersLock);
-        s_liveServers.erase(this);
+        auto& live = GetLiveServers();
+        std::scoped_lock _(live.Lock);
+        live.Set.erase(this);
     }
 
     Close();
@@ -267,6 +280,12 @@ bool Server::IsListeningP2P() const noexcept
     return m_p2pListenSock != k_HSteamListenSocket_Invalid;
 }
 
+bool Server::IsListeningDualStack() const noexcept
+{
+    SteamNetworkingIPAddr address{};
+    return IsListening() && m_pInterface->GetListenSocketAddress(m_listenSock, &address) && !address.IsIPv4();
+}
+
 uint32_t Server::GetClientCount() const noexcept
 {
     return m_connections.size() & 0xFFFFFFFF;
@@ -423,8 +442,9 @@ void Server::SteamNetConnectionStatusChangedCallback(SteamNetConnectionStatusCha
     {
         pServer = reinterpret_cast<Server*>(apInfo->m_info.m_nUserData);
 
-        std::scoped_lock _(s_liveServersLock);
-        if (!s_liveServers.contains(pServer))
+        auto& live = GetLiveServers();
+        std::scoped_lock _(live.Lock);
+        if (!live.Set.contains(pServer))
             pServer = nullptr;
     }
 

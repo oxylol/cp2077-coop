@@ -56,6 +56,10 @@ struct Server
     [[nodiscard]] uint16_t GetPort() const noexcept;
     [[nodiscard]] bool IsListening() const noexcept;
     [[nodiscard]] bool IsListeningP2P() const noexcept;
+    // Listening on IPv6 and IPv4 at once (Host()'s default), not on IPv4 only: the networking library falls back to
+    // that when it can't, and also when the port is taken by another dual-stack socket. On Windows that IPv4 socket
+    // then shares the port with the other one.
+    [[nodiscard]] bool IsListeningDualStack() const noexcept;
     [[nodiscard]] uint32_t GetClientCount() const noexcept;
     [[nodiscard]] uint32_t GetTickRate() const noexcept;
     [[nodiscard]] uint64_t GetTick() const noexcept;

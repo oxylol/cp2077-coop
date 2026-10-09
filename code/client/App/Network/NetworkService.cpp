@@ -33,6 +33,9 @@ NetworkService::NetworkService()
 
 NetworkService::~NetworkService()
 {
+    // The game is closing: a session it hosts ends now (the players' connections time out).
+    m_lobby.Leave();
+    HostSession::Shutdown();
 }
 
 void NetworkService::BindMessageHandlers()

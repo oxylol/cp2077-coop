@@ -16,16 +16,23 @@ GameServer::GameServer(const Config& acConfig)
     SetBlocking(false);
 
     // A port taken by something else (another game on this PC, for instance) moves the session to the next one.
+    // Where this machine can listen on IPv6 and IPv4 at once (tried on a port the system picks), a session that only
+    // got IPv4 found its port taken: on Windows it would share it with the other socket.
+    const bool dualStack = Host(0, m_config.TickRate) && IsListeningDualStack();
+    Close();
+
     uint16_t port = m_config.Port;
-    for (int attempt = 0; attempt < 10 && !Host(port, m_config.TickRate); ++attempt)
+    for (int attempt = 0; attempt < 10; ++attempt, ++port)
     {
+        if (Host(port, m_config.TickRate) && (!dualStack || IsListeningDualStack()))
+            break;
+        Close();
         spdlog::warn("[Session] Port {} is already in use, trying {}", port, port + 1);
-        port++;
     }
 
     if (!IsListening())
     {
-        spdlog::error("[Session] Couldn't open a port between {} and {}", m_config.Port, port);
+        spdlog::error("[Session] Couldn't open a port between {} and {}", m_config.Port, port - 1);
         return;
     }
 

@@ -45,6 +45,12 @@ void HostSession::Stop()
     }
 }
 
+void HostSession::Shutdown()
+{
+    Stop();
+    s_pClosing.reset();
+}
+
 void HostSession::Update()
 {
     if (s_pServer)

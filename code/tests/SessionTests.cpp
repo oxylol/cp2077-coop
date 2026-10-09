@@ -208,6 +208,7 @@ TEST_CASE("The host's game hosts a session, guests join it with the password")
     HostSession::Stop();
     CHECK_FALSE(HostSession::IsRunning());
     REQUIRE(Pump(all, [&] { return again.Disconnected && host.Disconnected; }));
+    HostSession::Shutdown();
 }
 
 TEST_CASE("A taken port moves the session to the next one")
@@ -233,5 +234,5 @@ TEST_CASE("A taken port moves the session to the next one")
 
     REQUIRE(HostSession::Start(settings));
     CHECK(HostSession::GetPort() == first + 1);
-    HostSession::Stop();
+    HostSession::Shutdown();
 }
