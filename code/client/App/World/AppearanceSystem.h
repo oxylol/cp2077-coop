@@ -18,7 +18,8 @@ struct AppearanceSystem : RED4ext::IScriptable
 
     Red::DynArray<Red::TweakDBID> GetEntityItems(Red::EntityID &);
     void AddEntity(const Red::EntityID entityID, const Red::DynArray<Red::TweakDBID>& items, const Vector<uint8_t> ccstate);
-    Vector<String> GetPlayerItems(Red::Handle<Red::GameObject> player);
+    // The worn items' TweakDBIDs, without the per-game offset bits.
+    Vector<uint64_t> GetPlayerItems(Red::Handle<Red::GameObject> player);
     bool ApplyAppearance(Red::Handle<Red::GameObject> object);
 
     void OnWorldAttached(RED4ext::world::RuntimeScene* aScene);

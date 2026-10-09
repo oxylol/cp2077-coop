@@ -42,15 +42,18 @@ Red::DynArray<Red::TweakDBID> AppearanceSystem::GetEntityItems(Red::EntityID & e
     return m_playerEquipment[entityID];
 }
 
-Vector<String> AppearanceSystem::GetPlayerItems(Red::Handle<Red::GameObject> player)
+Vector<uint64_t> AppearanceSystem::GetPlayerItems(Red::Handle<Red::GameObject> player)
 {
-    auto equipment = Vector<String>();
-    Red::DynArray<Red::CString> items;
+    // Not names (TDBID.ToStringDEBUG is empty outside the game's debug builds): the ids themselves, name hash and
+    // length only. The upper bytes are an offset into this game's TweakDB, which the other game works out itself.
+    auto equipment = Vector<uint64_t>();
+    Red::DynArray<Red::TweakDBID> items;
     Red::CallVirtual(this, "GetPlayerItems", items);
-    for (auto item : items)
+    for (const auto& item : items)
     {
-        spdlog::info("Getting: {}", item.c_str());
-        equipment.push_back(item.c_str());
+        const auto id = item.value & 0xFFFFFFFFFFull;
+        spdlog::info("[Appearance] Wearing {:010x}", id);
+        equipment.push_back(id);
     }
     return equipment;
 }

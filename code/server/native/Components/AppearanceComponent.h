@@ -2,6 +2,6 @@
 
 struct AppearanceComponent
 {
-    Vector<String> equipment;
+    Vector<uint64_t> equipment; // TweakDBIDs (SpawnCharacterRequest)
     Vector<uint8_t> ccstate;
 };

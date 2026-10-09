@@ -25,7 +25,7 @@ message NotifyCharacterLoad {
     common.Vector3 position = 2;
     float rotation = 3;
     bool is_player = 4;
-    repeated string equipment = 5;
+    repeated uint64 equipment = 5; // as in SpawnCharacterRequest
     bytes ccstate = 6;
 }
 

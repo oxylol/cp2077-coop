@@ -81,9 +81,24 @@ bool Call(RED4ext::IScriptable* apInstance, const char* aName, void* apOut, std:
         args.emplace_back(pType, entry.value);
         defaults.push_back(std::move(entry));
     }
-    const bool ok = RED4ext::ExecuteFunction(apInstance, pFunc, apOut, args);
+    // A function that returns something isn't called at all without somewhere to put the result (ExecuteFunction
+    // returns false; SetWeather never ran): a throwaway one when the caller doesn't want it.
+    void* pOut = apOut;
+    std::optional<Default> result;
+    if (!pOut && pFunc->returnType)
+    {
+        auto* pType = pFunc->returnType->type;
+        result.emplace(Default{pType, std::make_unique<uint8_t[]>(pType->GetSize() + 16), nullptr});
+        result->value = reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(result->storage.get()) + 15) & ~uintptr_t{15});
+        pType->Construct(result->value);
+        pOut = result->value;
+    }
+
+    const bool ok = RED4ext::ExecuteFunction(apInstance, pFunc, pOut, args);
     for (auto& entry : defaults)
         entry.type->Destruct(entry.value);
+    if (result)
+        result->type->Destruct(result->value);
     if (!ok)
         WarnOnce(where + " failed");
     return ok;

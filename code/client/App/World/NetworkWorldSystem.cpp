@@ -36,6 +36,15 @@ bool NetworkWorldSystem::Spawn(uint64_t aServerId, const Red::Vector4& aPosition
     if (!m_ready)
         return false;
 
+    // The session's ids are kept clear of this world's own (Game/World.cpp in the session): one that's already
+    // something else here would get a character attached and later destroyed.
+    if (is_alive(aServerId) && !flecs::entity(*this, aServerId).has<SpawningComponent>() &&
+        !flecs::entity(*this, aServerId).has<EntityComponent>())
+    {
+        spdlog::error("[Spawn] remote id {} is already used by this game's world; not spawning it", aServerId);
+        return false;
+    }
+
     const auto handle = Red::GetGameSystem<NetworkWorldSystem>();
     Red::EntityID id;
     Red::ScriptGameInstance game;
@@ -229,7 +238,7 @@ void NetworkWorldSystem::HandleCharacterLoad(const PacketEvent<server::NotifyCha
     auto equipment = Red::DynArray<Red::TweakDBID>(this->GetAllocator());
     for (auto item : aMessage.get_equipment())
     {
-        equipment.EmplaceBack(item);
+        equipment.EmplaceBack(Red::TweakDBID(item));
     }
 
     auto ccstate = aMessage.get_ccstate();

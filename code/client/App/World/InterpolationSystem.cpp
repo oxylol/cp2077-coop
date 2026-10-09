@@ -194,12 +194,15 @@ void InterpolationSystem::HandleNotifyEntityMove(const PacketEvent<server::Notif
     if (!entity)
         return;
 
-    auto* pInterpolation = entity.get_mut<InterpolationComponent>();
+    // A character still spawning in this game has no InterpolationComponent yet (it comes with the EntityComponent
+    // once the game object exists), and a newcomer's first move arrives right after its spawn: start it here, so the
+    // move waits for the puppet instead of reading through a null pointer (the host crashed on every join).
+    auto& interpolation = entity.ensure<InterpolationComponent>();
 
-    if (!pInterpolation->TimePoints.empty() && pInterpolation->TimePoints.back().Tick > aMessage.get_tick())
+    if (!interpolation.TimePoints.empty() && interpolation.TimePoints.back().Tick > aMessage.get_tick())
         return;
 
-    pInterpolation->TimePoints.push_back(InterpolationComponent::Timepoint{position, rotation, aMessage.get_speed(), aMessage.get_tick()});
+    interpolation.TimePoints.push_back(InterpolationComponent::Timepoint{position, rotation, aMessage.get_speed(), aMessage.get_tick()});
 }
 
 static Core::RawFunc<4018412273UL, float (*)(Red::move::Component*, MultiMovementController*)> AttachController;

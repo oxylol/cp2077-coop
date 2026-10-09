@@ -100,6 +100,8 @@ private:
     std::string m_hostName;
     // This session goes through Steam.
     bool m_viaSteam = false;
+    // Hosting with Steam on in coop.ini but not through it: why.
+    std::string m_notThroughSteam;
     SteamLobby m_lobby;
     WorldSync m_worldSync;
 };

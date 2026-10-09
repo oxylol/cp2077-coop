@@ -58,6 +58,8 @@ bool NetworkService::UseSteam(std::string& aWhy)
     const bool steam = Settings::Get().steam && SteamLobby::Init(aWhy);
     if (!Settings::Get().steam)
         aWhy = "Steam is off in coop.ini";
+    else if (!steam)
+        spdlog::info("[Co-op] Not through Steam: {}", aWhy);
 
     // The session and the connections to it run on Steam's networking or on the mod's own.
     SteamInterface::SetSockets(steam ? SteamLobby::GetSockets() : nullptr,
@@ -109,6 +111,7 @@ void NetworkService::Host()
     m_address.clear();
     m_hostName.clear();
     m_viaSteam = steam;
+    m_notThroughSteam = Settings::Get().steam && !steam ? why : std::string{};
     m_busy = true;
     m_refused = false;
 
@@ -342,6 +345,9 @@ void NetworkService::HandleAuthentication(const PacketEvent<server::Authenticati
 
     if (IsHosting() && m_viaSteam)
         ShowMessage("Hosting a co-op session. Guests with your password hold \".\" to join.");
+    else if (IsHosting() && !m_notThroughSteam.empty())
+        ShowMessage(fmt::format("Hosting a co-op session on port {}, not through Steam ({}). Guests hold \".\" to join "
+                                "with your address.", HostSession::GetPort(), m_notThroughSteam));
     else if (IsHosting())
         ShowMessage(fmt::format("Hosting a co-op session on port {}. Guests hold \".\" to join with your address.",
                                 HostSession::GetPort()));

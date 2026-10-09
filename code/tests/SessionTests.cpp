@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <optional>
@@ -39,6 +40,35 @@ struct TestClient final : Client
         m_dispatcher.sink<PacketEvent<server::NotifyPlayerJoined>>().connect<&TestClient::OnJoined>(this);
         m_dispatcher.sink<PacketEvent<server::NotifyPlayerLeft>>().connect<&TestClient::OnLeft>(this);
         m_dispatcher.sink<PacketEvent<server::NotifyWorldState>>().connect<&TestClient::OnWorldState>(this);
+        m_dispatcher.sink<PacketEvent<server::SpawnCharacterResponse>>().connect<&TestClient::OnSpawned>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyCharacterLoad>>().connect<&TestClient::OnCharacterLoad>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyEntityMove>>().connect<&TestClient::OnEntityMove>(this);
+    }
+
+    // What the game sends once it's in: its character, where it stands, what it wears and looks like.
+    void SpawnCharacter(float aX, const std::vector<uint64_t>& acEquipment, const std::vector<uint8_t>& acCcstate)
+    {
+        client::SpawnCharacterRequest request;
+        common::Vector3 position;
+        position.set_x(aX);
+        request.set_position(position);
+        request.set_is_player(true);
+        Vector<uint64_t> equipment(acEquipment.begin(), acEquipment.end());
+        request.set_equipment(equipment);
+        Vector<uint8_t> ccstate(acCcstate.begin(), acCcstate.end());
+        request.set_ccstate(ccstate);
+        SendMessage(request);
+    }
+
+    void Move(float aX, uint64_t aTick)
+    {
+        client::MoveEntityRequest request;
+        request.set_id(*OwnCharacter);
+        common::Vector3 position;
+        position.set_x(aX);
+        request.set_position(position);
+        request.set_tick(aTick);
+        SendMessage(request);
     }
 
     template <class T> void SendMessage(const T& acMessage)
@@ -85,6 +115,23 @@ struct TestClient final : Client
     {
         WorldState = std::make_pair(acEvent.get_game_time(), acEvent.get_weather());
     }
+    void OnSpawned(const PacketEvent<server::SpawnCharacterResponse>& acEvent)
+    {
+        if (acEvent.has_id())
+            OwnCharacter = acEvent.get_id();
+    }
+    void OnCharacterLoad(const PacketEvent<server::NotifyCharacterLoad>& acEvent)
+    {
+        const auto& equipment = acEvent.get_equipment();
+        const auto& ccstate = acEvent.get_ccstate();
+        Characters.push_back({acEvent.get_id(), acEvent.get_position().get_x(),
+                              std::vector<uint64_t>(equipment.begin(), equipment.end()),
+                              std::vector<uint8_t>(ccstate.begin(), ccstate.end())});
+    }
+    void OnEntityMove(const PacketEvent<server::NotifyEntityMove>& acEvent)
+    {
+        Moves.emplace_back(acEvent.get_id(), acEvent.get_position().get_x());
+    }
 
     static ScratchAllocator& GetScratch()
     {
@@ -102,6 +149,17 @@ struct TestClient final : Client
     std::vector<std::string> Left;
     std::optional<std::pair<uint32_t, uint64_t>> WorldState;
     bool Disconnected = false;
+
+    struct Character
+    {
+        uint64_t Id;
+        float X;
+        std::vector<uint64_t> Equipment;
+        std::vector<uint8_t> Ccstate;
+    };
+    std::optional<uint64_t> OwnCharacter;
+    std::vector<Character> Characters; // the others', as the session loads them
+    std::vector<std::pair<uint64_t, float>> Moves;
 
 private:
     entt::dispatcher m_dispatcher;
@@ -234,5 +292,63 @@ TEST_CASE("A taken port moves the session to the next one")
 
     REQUIRE(HostSession::Start(settings));
     CHECK(HostSession::GetPort() == first + 1);
+    HostSession::Shutdown();
+}
+
+TEST_CASE("Players get each other's characters with their items and look, then their moves")
+{
+    HostSession::Settings settings;
+    settings.Port = kPort + 20;
+    settings.Password = "secret";
+    settings.HostToken = "host-token";
+    REQUIRE(HostSession::Start(settings));
+
+    TestClient host("Host", "", "host-token");
+    TestClient guest("Guest", "secret");
+    std::vector<TestClient*> all{&host, &guest};
+
+    ISteamNetworkingSockets* pSockets = nullptr;
+    HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
+    REQUIRE(HostSession::OpenLocalConnection(pSockets, connection));
+    REQUIRE(host.Adopt(pSockets, connection));
+    guest.Connect("127.0.0.1:" + std::to_string(HostSession::GetPort()));
+    REQUIRE(Pump(all, [&] { return host.Accepted.has_value() && guest.Accepted.has_value(); }));
+    REQUIRE(*host.Accepted);
+    REQUIRE(*guest.Accepted);
+
+    // Item ids as TweakDBIDs (name hash and length), not names: the game has none outside debug builds.
+    const std::vector<uint64_t> hostItems{0x12'3456'789Aull, 0xFF'FFFF'FFFFull};
+    const std::vector<uint64_t> guestItems{0x07'CAFE'BABEull};
+    host.SpawnCharacter(1.f, hostItems, {1, 2, 3, 4});
+    REQUIRE(Pump(all, [&] { return host.OwnCharacter.has_value(); }));
+    guest.SpawnCharacter(2.f, guestItems, {9, 9});
+    REQUIRE(Pump(all, [&] { return guest.OwnCharacter.has_value() && !host.Characters.empty() && !guest.Characters.empty(); }));
+
+    // Each gets the other's character, exactly as sent, and not its own.
+    REQUIRE(host.Characters.size() == 1);
+    CHECK(host.Characters[0].Id == *guest.OwnCharacter);
+    CHECK(host.Characters[0].X == 2.f);
+    CHECK(host.Characters[0].Equipment == guestItems);
+    CHECK(host.Characters[0].Ccstate == std::vector<uint8_t>{9, 9});
+    REQUIRE(guest.Characters.size() == 1);
+    CHECK(guest.Characters[0].Id == *host.OwnCharacter);
+    CHECK(guest.Characters[0].Equipment == hostItems);
+    CHECK(guest.Characters[0].Ccstate == std::vector<uint8_t>{1, 2, 3, 4});
+
+    // The games create these under the same ids in their own worlds, which keep flecs' built-in entities and
+    // components below and their own entities from 10'000'000 up.
+    for (const auto id : {*host.OwnCharacter, *guest.OwnCharacter})
+    {
+        CHECK((id & 0xFFFF'FFFFull) >= 1'000'000);
+        CHECK((id & 0xFFFF'FFFFull) < 10'000'000);
+    }
+
+    // A newcomer moves right away; the host gets it (and has to cope with its character still spawning).
+    guest.Move(3.f, 1);
+    REQUIRE(Pump(all, [&] {
+        return std::any_of(host.Moves.begin(), host.Moves.end(),
+                           [&](const auto& acMove) { return acMove.first == *guest.OwnCharacter && acMove.second == 3.f; });
+    }));
+
     HostSession::Shutdown();
 }

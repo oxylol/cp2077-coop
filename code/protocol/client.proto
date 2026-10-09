@@ -19,7 +19,9 @@ message SpawnCharacterRequest {
     float rotation = 2;
     bool is_player = 3;
     uint64 cookie = 4;
-    repeated string equipment = 5;
+    // TweakDBIDs of the worn items (name hash and length, TweakDBID::value & 0xFFFFFFFFFF): the game has no item
+    // names outside debug builds.
+    repeated uint64 equipment = 5;
     bytes ccstate = 6;
 }
 

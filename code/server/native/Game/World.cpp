@@ -10,7 +10,11 @@
 
 World::World()
 {
-    set_entity_range(1, 5'000'000);
+    // The players' games create each character the session sends under the same id in their own world
+    // (NetworkWorldSystem::Spawn), where flecs' built-in entities and the components take the low ids and the game's
+    // own entities 10'000'000 and up. Starting at 1 handed out ids like 171, which can be a component or a system
+    // there.
+    set_entity_range(1'000'000, 5'000'000);
 
     emplace<Level>(this);
     emplace<PlayerManager>(this);
