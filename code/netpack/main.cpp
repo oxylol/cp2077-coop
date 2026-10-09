@@ -219,7 +219,9 @@ void GenerateProtocolSource(const Context::Message& ctx, std::ostringstream& out
                     out << "PacketEvent<" << GetType(field) << "> msg;" << std::endl;
                     out << "msg.ConnectionId = aConnectionId;" << std::endl;
                     out << "msg.deserialize(reader);" << std::endl;
-                    out << "dispatcher.enqueue(msg);" << std::endl;
+                    // Handled right away, in the order the messages came: queued, they were handled by type, so
+                    // a player's "out of the car" and "into the driver seat" in the same frame swapped places.
+                    out << "dispatcher.trigger(msg);" << std::endl;
                     out << "return true;" << std::endl;
                 }
 

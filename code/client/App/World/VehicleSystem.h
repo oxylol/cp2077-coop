@@ -33,6 +33,8 @@ protected:
     void DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Red::CName aSit);
     // The vehicle's game object exists: it's moved and seated in from now on.
     static void Ready(flecs::entity aVehicle, Red::EntityID aGameId);
+    // Its remote driver got out (or this player took the wheel): driven by its physics again.
+    void ReleaseRemoteDriving(Red::EntityID aVehicle);
 
 private:
     bool m_ready{false};
@@ -42,6 +44,8 @@ private:
     Red::CBaseFunction* m_pExitVehicle;
     std::optional<uint64_t> m_vehicleRemoteId;
     std::optional<Red::EntityID> m_vehicleGameId;
+    // Vehicles here with another player at the wheel: kinematic, moved by that player's updates (DoMount).
+    Core::Set<Red::EntityID> m_remoteDriven;
 };
 
 RTTI_DEFINE_CLASS(VehicleSystem, { 

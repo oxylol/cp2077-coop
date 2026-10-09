@@ -189,8 +189,13 @@ struct TestClient final : Client
     void OnVehicleEnter(const PacketEvent<server::NotifyVehicleEnter>& acEvent)
     {
         VehicleEnters.emplace_back(acEvent.get_character_id(), acEvent.get_vehicle_id());
+        VehicleEvents.push_back("in " + std::to_string(acEvent.get_character_id()));
     }
-    void OnVehicleExit(const PacketEvent<server::NotifyVehicleExit>& acEvent) { VehicleExits.push_back(acEvent.get_character_id()); }
+    void OnVehicleExit(const PacketEvent<server::NotifyVehicleExit>& acEvent)
+    {
+        VehicleExits.push_back(acEvent.get_character_id());
+        VehicleEvents.push_back("out " + std::to_string(acEvent.get_character_id()));
+    }
     void OnVehicleControl(const PacketEvent<server::NotifyVehicleControlAssigned>& acEvent)
     {
         Driving.push_back(acEvent.get_vehicle_id());
@@ -256,6 +261,7 @@ struct TestClient final : Client
     std::vector<std::pair<uint64_t, uint64_t>> VehicleEnters; // character, vehicle
     std::vector<uint64_t> VehicleExits;
     std::vector<uint64_t> Driving; // the vehicles the session made this player the driver of
+    std::vector<std::string> VehicleEvents; // ins and outs, in order
 
 private:
     entt::dispatcher m_dispatcher;
@@ -585,6 +591,22 @@ TEST_CASE("A vehicle stays one vehicle for everyone, whoever gets in and out of 
     CHECK(host.VehicleEnters[1] == std::make_pair(*guest.OwnCharacter, car));
     CHECK(guest.VehicleLoads.size() == 1);
     CHECK(host.VehicleLoads.empty());
+
+    // The host rides along; the guest, driving, gets out first. Getting out, the host slides over to the driver seat
+    // first, as the game does when its side is blocked: out of one seat and into the other in the same frame. Then
+    // out. The guest's game sees it all, in that order, and the host out of the car at the end.
+    host.EnterVehicle(car, kPassenger);
+    REQUIRE(Pump(all, [&] { return guest.VehicleEnters.size() == 3; }));
+    guest.ExitVehicle();
+    REQUIRE(Pump(all, [&] { return host.VehicleExits.size() == 2; }));
+    guest.VehicleEvents.clear();
+    host.ExitVehicle();
+    host.EnterVehicle(car, kDriver);
+    REQUIRE(Pump(all, [&] { return host.Driving.size() == 3 && guest.VehicleEvents.size() == 2; }));
+    host.ExitVehicle();
+    REQUIRE(Pump(all, [&] { return guest.VehicleEvents.size() == 3; }));
+    const auto hostId = std::to_string(*host.OwnCharacter);
+    CHECK(guest.VehicleEvents == std::vector<std::string>{"out " + hostId, "in " + hostId, "out " + hostId});
 
     HostSession::Shutdown();
 }

@@ -42,8 +42,8 @@ rule("codegen")
         --table.insert(target:objectfiles(), objectfile)
         batchcmds:compile(outputSourceFile, objectfile)
 
-		-- add deps
-		batchcmds:add_depfiles(sourcefile)
+		-- add deps: the .proto, and the generator itself (a changed generator regenerates the code)
+		batchcmds:add_depfiles(sourcefile, netpack)
 		batchcmds:set_depmtime(os.mtime(outputHeaderFile))
 		batchcmds:set_depcache(target:dependfile(outputHeaderFile))
         batchcmds:set_depcache(target:dependfile(outputSourceFile))

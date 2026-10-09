@@ -38,6 +38,7 @@ void VehicleSystem::OnDisconnected()
     m_vehicleRemoteId = std::nullopt;
     m_vehicleGameId = std::nullopt;
     m_pendingMounts.clear();
+    m_remoteDriven.clear();
 }
 
 void VehicleSystem::OnInitialize(const RED4ext::JobHandle& aJob)
@@ -229,19 +230,48 @@ void VehicleSystem::OnVehicleReady(const Red::EntityID& aVehicleEntityId)
 
 bool VehicleSystem::HandleVehicleExitMessage(const PacketEvent<server::NotifyVehicleExit>& aMessage)
 {
-    spdlog::info("[VehicleSystem] HandleVehicleExitMessage");
+    spdlog::info("[VehicleSystem] HandleVehicleExitMessage: character {:x}", aMessage.get_character_id());
 
     const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
+    auto characterEntity = worldSystem->GetEntityByServerId(aMessage.get_character_id());
+    if (!characterEntity.is_alive())
+        return true;
+
     const auto handle = Red::Handle(this);
     bool res;
     const auto character = worldSystem->GetEntityIdByServerId(aMessage.get_character_id());
     Red::Detail::CallFunctionWithArgs(m_pExitVehicle, handle, res, character);
 
-    auto characterEntity = worldSystem->GetEntityByServerId(aMessage.get_character_id());
-
-    characterEntity.remove<AttachedComponent>();
+    if (const auto* pAttached = characterEntity.get<AttachedComponent>())
+    {
+        if (pAttached->Driver)
+            ReleaseRemoteDriving(pAttached->Vehicle);
+        characterEntity.remove<AttachedComponent>();
+    }
 
     return true;
+}
+
+void VehicleSystem::ReleaseRemoteDriving(Red::EntityID aVehicle)
+{
+    if (!m_remoteDriven.erase(aVehicle))
+        return;
+
+    // Parked again: a car like any other, until someone drives it. Updates still on their way don't move it.
+    static Core::RawFunc<1585713002UL, void (*)(Red::vehicle::BaseObject*, bool)> SetKinematic;
+    const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
+    if (auto vehicle = worldSystem->FindEntity(aVehicle))
+    {
+        if (auto* pInterpolation = vehicle.get_mut<InterpolationComponent>())
+            pInterpolation->TimePoints.clear();
+    }
+    if (const auto pVehicle = Red::Cast<Red::vehicle::BaseObject>(worldSystem->GetEntity(aVehicle)))
+    {
+        if (const auto pMoveSystem = Red::GetGameSystem<Red::vehicle::IMoveSystem>())
+            SetSimpleMovement(pMoveSystem, aVehicle, false);
+        SetKinematic(pVehicle, false);
+    }
+    spdlog::info("[VehicleSystem] vehicle {} has no remote driver any more", aVehicle.hash);
 }
 
 bool VehicleSystem::HandleVehicleControlMessage(const PacketEvent<server::NotifyVehicleControlAssigned>& aMessage)
@@ -267,15 +297,10 @@ bool VehicleSystem::HandleVehicleControlMessage(const PacketEvent<server::Notify
     if (auto* pInterpolation = vehicle.get_mut<InterpolationComponent>())
         pInterpolation->TimePoints.clear();
 
-    static Core::RawFunc<4039776020UL, void (*)(Red::vehicle::BaseObject*, bool)> SetIsPlayerControlled;
-    static Core::RawFunc<1585713002UL, void (*)(Red::vehicle::BaseObject*, bool)> SetKinematic;
-    if (const auto pVehicle = Red::Cast<Red::vehicle::BaseObject>(worldSystem->GetEntity(*m_vehicleGameId)))
-    {
-        if (const auto pMoveSystem = Red::GetGameSystem<Red::vehicle::IMoveSystem>())
-            SetSimpleMovement(pMoveSystem, *m_vehicleGameId, false);
-        SetKinematic(pVehicle, false);
-        SetIsPlayerControlled(pVehicle, true);
-    }
+    // Normally released when its previous driver got out (HandleVehicleExitMessage); only if that hasn't arrived yet.
+    // Nothing else is touched here: the game is still busy seating this player (or, after sliding over from the
+    // passenger seat, about to get them out).
+    ReleaseRemoteDriving(*m_vehicleGameId);
 
     return true;
 }
@@ -291,13 +316,20 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
     if (!Red::Detail::CallFunctionWithArgs(m_pEnterVehicle, handle, res, character, aVehicle, aSit) || !res)
         spdlog::warn("[VehicleSystem] seating character {} in vehicle {} failed", character.hash, aVehicle.hash);
 
-    aCharacter.add<AttachedComponent>();
+    // Only a driver drives it: a passenger leaves the vehicle as it is (prepared for driving with nobody at the wheel,
+    // the game crashed when someone got in on the passenger side).
+    const bool driver = aSit == Red::CName("seat_front_left");
+    aCharacter.set<AttachedComponent>({aVehicle, driver});
+    if (!driver)
+        return;
 
-    // Moved by its driver's updates, unless this player drives it.
+    // Moved by its driver's updates from now on, unless this player drives it.
     const bool ours = m_vehicleRemoteId && m_vehicleGameId == aVehicle;
     const auto vehicle = Red::Cast<Red::vehicle::WheeledBaseObject>(worldSystem->GetEntity(aVehicle));
-    if (vehicle && !ours)
+    if (vehicle && !ours && m_remoteDriven.count(aVehicle) == 0)
     {
+        m_remoteDriven.insert(aVehicle);
+
         // called from vehicle::actions::DriveAction::OnStart
         // static Core::RawFunc<4018412273UL, void (*)(Red::move::Component *, IMoveController &)> AttachLocomotionController
         static Core::RawFunc<4039776020UL, void (*)(Red::vehicle::BaseObject*, bool)> SetIsPlayerControlled;
@@ -308,7 +340,8 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
         SetIsPlayerControlled(vehicle, false);
         // turn on engine
         reinterpret_cast<void (*)(Red::vehicle::WheeledBaseObject*, bool)>(*(uintptr_t*)(*(uintptr_t*)vehicle.instance + 0x328))(vehicle, true);
-        vehicle->engineData->unk61 = 0;
+        if (vehicle->engineData)
+            vehicle->engineData->unk61 = 0;
         SetFlags(vehicle, 0x10);
         SetFlags(vehicle, 0x80);
         SetKinematic(vehicle, true);
