@@ -299,7 +299,7 @@ void Level::HandleEnterVehicleRequest(PacketEvent<client::EnterVehicleRequest>& 
     if (aMessage.has_remote_vehicle_id())
     {
         vehicle = flecs::entity(GetWorld()->get_world(), aMessage.get_remote_vehicle_id());
-        if (!vehicle)
+        if (!aMessage.get_remote_vehicle_id() || !vehicle.is_alive() || !vehicle.has<VehicleComponent>())
         {
             spdlog::warn("Attempt to enter invalid vehicle {:x} from connection {:x}", aMessage.get_remote_vehicle_id(), aMessage.ConnectionId);
             return;
@@ -317,9 +317,33 @@ void Level::HandleEnterVehicleRequest(PacketEvent<client::EnterVehicleRequest>& 
             pos += glm::vec3(5, 0, 0);
         }
 
-        vehicle = GetWorld()->entity().child_of(player).set<MovementComponent>({pos, rot, {}}).set<VehicleComponent>({aMessage.get_vehicle_id()});
+        // Already brought in by this player, and asked again before the answer came (the game slid them over to
+        // the driver seat): the same vehicle, not a second one for the others.
+        const auto gameVehicle = aMessage.get_game_vehicle();
+        if (gameVehicle)
+        {
+            GetWorld()->each([&](flecs::entity aVehicle, const VehicleComponent& acVehicle) {
+                if (acVehicle.Creator == aMessage.ConnectionId && acVehicle.GameVehicle == gameVehicle)
+                    vehicle = aVehicle;
+            });
+        }
 
-        spdlog::info("Player {:x} spawned and entered vehicle {:x}", aMessage.get_id(), vehicle.id());
+        if (vehicle)
+        {
+            spdlog::info("Player {:x} entered vehicle {:x} again", aMessage.get_id(), vehicle.id());
+        }
+        else
+        {
+            vehicle = GetWorld()->entity().child_of(player).set<MovementComponent>({pos, rot, {}}).set<VehicleComponent>(
+                {aMessage.get_vehicle_id(), aMessage.ConnectionId, gameVehicle});
+
+            spdlog::info("Player {:x} spawned and entered vehicle {:x}", aMessage.get_id(), vehicle.id());
+        }
+
+        server::NotifyVehicleCreated created;
+        created.set_vehicle_id(vehicle);
+        created.set_game_vehicle(gameVehicle);
+        GServer->Send(aMessage.ConnectionId, created);
     }
 
     target.set<AttachmentComponent>({vehicle, aMessage.get_sit_id()});

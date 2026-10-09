@@ -42,6 +42,14 @@ public native class VehicleSystem extends IScriptable {
         this.OnVehicleReady(event.GetEntity().GetEntityID());
     }
 
+    // A vehicle another player drives here runs its engine; parked again, it doesn't.
+    public func SetEngine(vehicle_id: EntityID, on: Bool) -> Void {
+        let vehicle = GameInstance.FindEntityByID(GetGameInstance(), vehicle_id) as VehicleObject;
+        if IsDefined(vehicle) {
+            vehicle.TurnEngineOn(on);
+        }
+    }
+
     // Seats another player's character, as the game seats the player (vehicleTransition.script EnteringEvents): the
     // mount, the seat's animation set, and the seat's workspot, which animates sitting, driving and steering.
     public func EnterVehicle(character_id: EntityID, vehicle_id: EntityID, sit_position: CName) -> Bool {

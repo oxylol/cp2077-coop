@@ -49,6 +49,7 @@ struct TestClient final : Client
         m_dispatcher.sink<PacketEvent<server::NotifyVehicleEnter>>().connect<&TestClient::OnVehicleEnter>(this);
         m_dispatcher.sink<PacketEvent<server::NotifyVehicleExit>>().connect<&TestClient::OnVehicleExit>(this);
         m_dispatcher.sink<PacketEvent<server::NotifyVehicleControlAssigned>>().connect<&TestClient::OnVehicleControl>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyVehicleCreated>>().connect<&TestClient::OnVehicleCreated>(this);
     }
 
     // What the game sends once it's in: its character, where it stands, what it wears and looks like.
@@ -97,8 +98,9 @@ struct TestClient final : Client
         SendMessage(request);
     }
 
-    // Into a vehicle the session doesn't know yet (aKnown 0), or one it does, in the seat (CName hash).
-    void EnterVehicle(uint64_t aKnown, uint64_t aSeat)
+    // Into a vehicle the session doesn't know yet (aKnown 0; aGameVehicle: which one it is in this game), or one it
+    // does, in the seat (CName hash).
+    void EnterVehicle(uint64_t aKnown, uint64_t aSeat, uint64_t aGameVehicle = 0)
     {
         client::EnterVehicleRequest request;
         request.set_id(*OwnCharacter);
@@ -106,6 +108,7 @@ struct TestClient final : Client
         request.set_sit_id(aSeat);
         if (aKnown)
             request.set_remote_vehicle_id(aKnown);
+        request.set_game_vehicle(aGameVehicle);
         SendMessage(request);
     }
 
@@ -200,6 +203,10 @@ struct TestClient final : Client
     {
         Driving.push_back(acEvent.get_vehicle_id());
     }
+    void OnVehicleCreated(const PacketEvent<server::NotifyVehicleCreated>& acEvent)
+    {
+        Created.emplace_back(acEvent.get_vehicle_id(), acEvent.get_game_vehicle());
+    }
     void OnCharacterShot(const PacketEvent<server::NotifyCharacterShot>& acEvent)
     {
         Shots.push_back({acEvent.get_id(), acEvent.get_count()});
@@ -262,6 +269,7 @@ struct TestClient final : Client
     std::vector<uint64_t> VehicleExits;
     std::vector<uint64_t> Driving; // the vehicles the session made this player the driver of
     std::vector<std::string> VehicleEvents; // ins and outs, in order
+    std::vector<std::pair<uint64_t, uint64_t>> Created; // the session's id, and the vehicle in this game
 
 private:
     entt::dispatcher m_dispatcher;
@@ -607,6 +615,58 @@ TEST_CASE("A vehicle stays one vehicle for everyone, whoever gets in and out of 
     REQUIRE(Pump(all, [&] { return guest.VehicleEvents.size() == 3; }));
     const auto hostId = std::to_string(*host.OwnCharacter);
     CHECK(guest.VehicleEvents == std::vector<std::string>{"out " + hostId, "in " + hostId, "out " + hostId});
+
+    HostSession::Shutdown();
+}
+
+TEST_CASE("Getting into a car from the passenger side and sliding over is still one car")
+{
+    HostSession::Settings settings;
+    settings.Port = kPort + 50;
+    settings.Password = "secret";
+    settings.HostToken = "host-token";
+    REQUIRE(HostSession::Start(settings));
+
+    TestClient host("Host", "", "host-token");
+    TestClient guest("Guest", "secret");
+    std::vector<TestClient*> all{&host, &guest};
+
+    ISteamNetworkingSockets* pSockets = nullptr;
+    HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
+    REQUIRE(HostSession::OpenLocalConnection(pSockets, connection));
+    REQUIRE(host.Adopt(pSockets, connection));
+    guest.Connect("127.0.0.1:" + std::to_string(HostSession::GetPort()));
+    REQUIRE(Pump(all, [&] { return host.Accepted.has_value() && guest.Accepted.has_value(); }));
+    host.SpawnCharacter(1.f, {}, {});
+    guest.SpawnCharacter(2.f, {}, {});
+    REQUIRE(Pump(all, [&] { return host.OwnCharacter && guest.OwnCharacter; }));
+
+    constexpr uint64_t kDriver = 0xb000b1d029d0cea0ull; // seat_front_left
+    constexpr uint64_t kPassenger = 0x1234ull;
+    constexpr uint64_t kGuestCar = 0x9009996ull; // the car in the guest's game
+
+    // The guest gets into their own car through the passenger door: the session makes it, and tells them its id
+    // (they don't drive it, so nothing else would).
+    guest.EnterVehicle(0, kPassenger, kGuestCar);
+    REQUIRE(Pump(all, [&] { return guest.Created.size() == 1 && host.VehicleLoads.size() == 1; }));
+    const auto car = guest.Created[0].first;
+    CHECK(guest.Created[0].second == kGuestCar);
+    CHECK(guest.Driving.empty());
+
+    // The game slides them over to the driver seat, before their game has the answer: still the same car for the
+    // host, and the guest drives it.
+    guest.ExitVehicle();
+    guest.EnterVehicle(0, kDriver, kGuestCar);
+    REQUIRE(Pump(all, [&] { return guest.Driving.size() == 1 && host.VehicleEnters.size() == 2; }));
+    CHECK(guest.Driving[0] == car);
+    CHECK(host.VehicleEnters[1] == std::make_pair(*guest.OwnCharacter, car));
+    CHECK(host.VehicleLoads.size() == 1);
+
+    // Another car of theirs is another car.
+    guest.ExitVehicle();
+    guest.EnterVehicle(0, kDriver, kGuestCar + 1);
+    REQUIRE(Pump(all, [&] { return host.VehicleLoads.size() == 2; }));
+    CHECK(host.VehicleLoads[1] != car);
 
     HostSession::Shutdown();
 }

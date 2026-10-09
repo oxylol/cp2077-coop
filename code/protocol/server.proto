@@ -40,6 +40,12 @@ message NotifyVehicleControlAssigned {
     uint64 vehicle_id = 1;
 }
 
+// To the player who got into a vehicle the session didn't know: its id from now on (client.EnterVehicleRequest).
+message NotifyVehicleCreated {
+    uint64 vehicle_id = 1;
+    uint64 game_vehicle = 2;
+}
+
 message NotifyVehicleEnter {
     uint64 vehicle_id = 1;
     uint64 character_id = 2;
@@ -111,5 +117,6 @@ message Protocol {
         NotifyWorldState notify_world_state = 15;
         NotifyCharacterState notify_character_state = 16;
         NotifyCharacterShot notify_character_shot = 17;
+        NotifyVehicleCreated notify_vehicle_created = 18;
     }
 }

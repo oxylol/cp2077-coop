@@ -29,12 +29,16 @@ protected:
     bool HandleVehicleEnterMessage(const PacketEvent<server::NotifyVehicleEnter>& aMessage);
     bool HandleVehicleExitMessage(const PacketEvent<server::NotifyVehicleExit>& aMessage);
     bool HandleVehicleControlMessage(const PacketEvent<server::NotifyVehicleControlAssigned>& aMessage);
+    bool HandleVehicleCreatedMessage(const PacketEvent<server::NotifyVehicleCreated>& aMessage);
+    // This game's own vehicle, known to the session as aServerId.
+    static void RegisterOwnVehicle(uint64_t aServerId, Red::EntityID aGameId);
+    void SetVehicleEngine(Red::EntityID aVehicle, bool aOn); // VehicleSystem.reds SetEngine
 
     void DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Red::CName aSit);
     // The vehicle's game object exists: it's moved and seated in from now on.
     static void Ready(flecs::entity aVehicle, Red::EntityID aGameId);
-    // Its remote driver got out (or this player took the wheel): driven by its physics again.
-    void ReleaseRemoteDriving(Red::EntityID aVehicle);
+    // Its remote driver got out (aParked: its engine stops) or this player took the wheel: driven by its physics again.
+    void ReleaseRemoteDriving(Red::EntityID aVehicle, bool aParked);
 
 private:
     bool m_ready{false};

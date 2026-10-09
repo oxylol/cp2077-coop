@@ -43,6 +43,9 @@ message EnterVehicleRequest {
     uint64 vehicle_id = 4;
     uint64 sit_id = 5;
     uint64 remote_vehicle_id = 6;
+    // A vehicle the session doesn't know yet: which one it is in the player's game (EntityID). Asked again for the
+    // same one (sliding over to the driver seat before the answer came), the session gives the same vehicle.
+    uint64 game_vehicle = 7;
 }
 
 message ExitVehicleRequest {
