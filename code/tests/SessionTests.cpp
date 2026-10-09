@@ -145,8 +145,11 @@ TEST_CASE("The host's game hosts a session, guests join it with the password")
     TestClient late("Late", "secret");
     std::vector<TestClient*> all{&host, &intruder, &guest, &late};
 
-    // The host's own game joins through the loopback address with its token, no password.
-    host.Connect(Address());
+    // The host's own game joins within the process (no network, as in the game) with its token, no password.
+    ISteamNetworkingSockets* pSockets = nullptr;
+    HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
+    REQUIRE(HostSession::OpenLocalConnection(pSockets, connection));
+    REQUIRE(host.Adopt(pSockets, connection));
     REQUIRE(Pump(all, [&] { return host.Accepted.has_value(); }));
     CHECK(*host.Accepted);
     CHECK(host.HostName == "Host");

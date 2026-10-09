@@ -29,12 +29,16 @@ GameServer::GameServer(const Config& acConfig)
         return;
     }
 
+    if (m_config.SteamP2P && !HostP2P())
+        spdlog::error("[Session] Couldn't open the Steam (P2P) listen socket; only addresses can join");
+
     m_pWorld = MakeUnique<World>();
 
     RegisterHandler<&GameServer::HandleAuthentication>(this);
     RegisterHandler<&GameServer::HandleReportWorldState>(this);
 
-    spdlog::info("[Session] Hosting on port {} (up to {} players, {})", GetPort(), m_config.MaxPlayer,
+    spdlog::info("[Session] Hosting on port {}{} (up to {} players, {})", GetPort(),
+                 IsListeningP2P() ? " and through Steam" : "", m_config.MaxPlayer,
                  m_config.Password.empty() ? "no password" : "password set");
 }
 

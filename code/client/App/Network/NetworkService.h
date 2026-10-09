@@ -6,6 +6,7 @@
 #include "Network/Client.h"
 #include "Network/Packet.h"
 #include "App/World/WorldSync.h"
+#include "SteamLobby.h"
 
 template <typename T> struct DebugType;
 
@@ -47,7 +48,8 @@ struct NetworkService final
     const server::Settings& GetServerSettings() const { return m_settings; }
 
     // The co-op session (in the game: hold "/" to host, "." to join, "/" again to leave; redscript
-    // MultiplayerGameController). Host runs the session in this game (HostSession.h) and joins it.
+    // MultiplayerGameController). Host runs the session in this game (HostSession.h) and joins it. On Steam, guests
+    // find it by the password (SteamLobby) and connect through Steam; otherwise by address (join_address).
     void Host();
     void Join();
     void Leave();
@@ -69,6 +71,10 @@ protected:
     void HandlePlayerLeft(const PacketEvent<server::NotifyPlayerLeft>& aMessage);
     void HandleWorldState(const PacketEvent<server::NotifyWorldState>& aMessage);
 
+    // Steam's networking for the session when it can be used (coop.ini steam), the mod's own otherwise (aWhy).
+    static bool UseSteam(std::string& aWhy);
+    void OnLobbyResult(const SteamLobby::Result& acResult);
+
     // A line in the middle of the screen, also logged.
     static void ShowMessage(const std::string& acText);
 
@@ -89,7 +95,12 @@ private:
     bool m_refused = false;
     // Set while hosting: our own game proves it's the host with it.
     std::string m_hostToken;
+    // Joining by address: where to. Joining through Steam: whose session.
     std::string m_address;
+    std::string m_hostName;
+    // This session goes through Steam.
+    bool m_viaSteam = false;
+    SteamLobby m_lobby;
     WorldSync m_worldSync;
 };
 

@@ -16,6 +16,13 @@ struct Server
     TP_NOCOPYMOVE(Server);
 
     bool Host(uint16_t aPort, uint32_t aTickRate, bool bEnableDualStackIP = true) noexcept;
+    // After Host(): also accepts Steam users connecting to this Steam user (Client::ConnectP2P), relayed by Steam.
+    // Needs the Steam client's sockets (SteamInterface).
+    bool HostP2P() noexcept;
+    // A connection to this server within this process (the host's own game): the server keeps one end, the other
+    // goes to Client::Adopt() with GetSockets(). No network involved.
+    HSteamNetConnection OpenLocalConnection() noexcept;
+    [[nodiscard]] ISteamNetworkingSockets* GetSockets() const noexcept { return m_pInterface; }
     void Close() noexcept;
     // Closes every connection but keeps listening. The close notices go out through the listen socket's UDP port,
     // so keep it open (and updated) a little longer if the players should learn about it rather than time out.
@@ -48,6 +55,7 @@ struct Server
 
     [[nodiscard]] uint16_t GetPort() const noexcept;
     [[nodiscard]] bool IsListening() const noexcept;
+    [[nodiscard]] bool IsListeningP2P() const noexcept;
     [[nodiscard]] uint32_t GetClientCount() const noexcept;
     [[nodiscard]] uint32_t GetTickRate() const noexcept;
     [[nodiscard]] uint64_t GetTick() const noexcept;
@@ -68,6 +76,7 @@ private:
     void OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t* apInfo);
 
     HSteamListenSocket m_listenSock;
+    HSteamListenSocket m_p2pListenSock = k_HSteamListenSocket_Invalid;
     HSteamNetPollGroup m_pollGroup;
     ISteamNetworkingSockets* m_pInterface;
 

@@ -39,6 +39,10 @@ struct Client
     bool Connect(const SteamNetworkingIPAddr& acEndpoint) noexcept;
     bool Connect(const std::string& acEndpoint) noexcept;
     bool ConnectByIp(const std::string& acEndpoint) noexcept;
+    // A Steam user's session (Server::HostP2P), relayed by Steam: needs the Steam client's sockets (SteamInterface).
+    bool ConnectP2P(uint64_t aSteamId) noexcept;
+    // A connection that's already connected, e.g. the host's own one end of Server::OpenLocalConnection().
+    bool Adopt(ISteamNetworkingSockets* apSockets, HSteamNetConnection aConnection) noexcept;
     void Close() noexcept;
 
     void Update() noexcept;

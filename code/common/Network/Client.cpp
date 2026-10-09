@@ -27,7 +27,7 @@ Client::Client(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     SteamInterface::Acquire();
 
     m_connection = k_HSteamNetConnection_Invalid;
-    m_pInterface = SteamNetworkingSockets();
+    m_pInterface = SteamInterface::Sockets();
 
     m_pLoop = Allocator::GetDefault()->Allocate(sizeof(uv_loop_t));
     auto* pLoop = static_cast<uv_loop_t*>(m_pLoop);
@@ -176,11 +176,29 @@ bool Client::Connect(const std::string& acEndpoint) noexcept
 bool Client::Connect(const SteamNetworkingIPAddr& acEndpoint) noexcept
 {
     Close();
+    // Whichever sockets are current: the previous connection, if any, was closed on its own.
+    m_pInterface = SteamInterface::Sockets();
 
     SteamNetworkingConfigValue_t options[2] = {};
     options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback));
     options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, reinterpret_cast<int64_t>(this));
     m_connection = m_pInterface->ConnectByIPAddress(acEndpoint, 2, options);
+
+    return m_connection != k_HSteamNetConnection_Invalid;
+}
+
+bool Client::ConnectP2P(uint64_t aSteamId) noexcept
+{
+    Close();
+    m_pInterface = SteamInterface::Sockets();
+
+    SteamNetworkingIdentity identity{};
+    identity.SetSteamID64(aSteamId);
+
+    SteamNetworkingConfigValue_t options[2] = {};
+    options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback));
+    options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, reinterpret_cast<int64_t>(this));
+    m_connection = m_pInterface->ConnectP2P(identity, 0, 2, options);
 
     return m_connection != k_HSteamNetConnection_Invalid;
 }
@@ -191,6 +209,27 @@ bool Client::ConnectByIp(const std::string& acEndpoint) noexcept
     remoteAddress.ParseString(acEndpoint.c_str());
 
     return Connect(remoteAddress);
+}
+
+bool Client::Adopt(ISteamNetworkingSockets* apSockets, HSteamNetConnection aConnection) noexcept
+{
+    Close();
+    if (!apSockets || aConnection == k_HSteamNetConnection_Invalid)
+        return false;
+
+    m_pInterface = apSockets;
+    m_connection = aConnection;
+
+    // What Connect() passes as options when it creates a connection.
+    const auto callback = reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback);
+    SteamInterface::UtilsFor(m_pInterface)->SetConfigValue(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
+                                                          k_ESteamNetworkingConfig_Connection, m_connection,
+                                                          k_ESteamNetworkingConfig_Ptr, &callback);
+    m_pInterface->SetConnectionUserData(m_connection, reinterpret_cast<int64_t>(this));
+
+    // Already connected: no status change will say so.
+    SendHandshake();
+    return true;
 }
 
 void Client::Close() noexcept

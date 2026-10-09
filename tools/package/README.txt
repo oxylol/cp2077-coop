@@ -14,9 +14,10 @@ INSTALL (everyone)
 
 SET UP (everyone)
   Open red4ext\plugins\zzzCyberpunkCoop\coop.ini in the game folder:
-    password      the same for everyone in the session
+    password      the same for everyone in the session, one of your own: on Steam, it's how the guests
+                  find the host (no addresses, no port forwarding)
     name          yours, shown to the others
-    join_address  guests: where the host is (coop.ini explains: same PC, home network, internet)
+    join_address  only without Steam (GOG, Epic): guests set where the host is (coop.ini explains)
 
 PLAY
   Load a save.

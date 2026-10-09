@@ -33,7 +33,7 @@ Server::Server(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     , m_serverIdentifier(aServerIdentifier)
 {
     SteamInterface::Acquire();
-    m_pInterface = SteamNetworkingSockets();
+    m_pInterface = SteamInterface::Sockets();
     m_listenSock = k_HSteamListenSocket_Invalid;
     m_pollGroup = k_HSteamNetPollGroup_Invalid;
 
@@ -92,6 +92,44 @@ bool Server::Host(const uint16_t aPort, uint32_t aTickRate, bool bEnableDualStac
     return IsListening();
 }
 
+bool Server::HostP2P() noexcept
+{
+    if (!IsListening())
+        return false;
+    if (IsListeningP2P())
+        return true;
+
+    SteamNetworkingConfigValue_t options[2] = {};
+    options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback));
+    options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, reinterpret_cast<int64_t>(this));
+    m_p2pListenSock = m_pInterface->CreateListenSocketP2P(0, 2, options);
+
+    return IsListeningP2P();
+}
+
+HSteamNetConnection Server::OpenLocalConnection() noexcept
+{
+    if (!IsListening())
+        return k_HSteamNetConnection_Invalid;
+
+    HSteamNetConnection serverEnd = k_HSteamNetConnection_Invalid;
+    HSteamNetConnection clientEnd = k_HSteamNetConnection_Invalid;
+    if (!m_pInterface->CreateSocketPair(&serverEnd, &clientEnd, false, nullptr, nullptr))
+        return k_HSteamNetConnection_Invalid;
+
+    // As if accepted from the listen socket (OnSteamNetConnectionStatusChanged): its options, the poll group, and
+    // waiting for the handshake.
+    const auto callback = reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback);
+    SteamInterface::UtilsFor(m_pInterface)->SetConfigValue(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
+                                                          k_ESteamNetworkingConfig_Connection, serverEnd,
+                                                          k_ESteamNetworkingConfig_Ptr, &callback);
+    m_pInterface->SetConnectionUserData(serverEnd, reinterpret_cast<int64_t>(this));
+    m_pInterface->SetConnectionPollGroup(serverEnd, m_pollGroup);
+    m_queuedConnections.push_back(serverEnd);
+
+    return clientEnd;
+}
+
 void Server::CloseConnections(const char* acReason) noexcept
 {
     for (const auto connection : m_connections)
@@ -112,9 +150,14 @@ void Server::Close() noexcept
     {
         m_pInterface->CloseListenSocket(m_listenSock);
     }
+    if (IsListeningP2P())
+    {
+        m_pInterface->CloseListenSocket(m_p2pListenSock);
+    }
 
     m_pollGroup = k_HSteamNetPollGroup_Invalid;
     m_listenSock = k_HSteamListenSocket_Invalid;
+    m_p2pListenSock = k_HSteamListenSocket_Invalid;
 }
 
 void Server::Update() noexcept
@@ -217,6 +260,11 @@ uint16_t Server::GetPort() const noexcept
 bool Server::IsListening() const noexcept
 {
     return m_listenSock != k_HSteamListenSocket_Invalid;
+}
+
+bool Server::IsListeningP2P() const noexcept
+{
+    return m_p2pListenSock != k_HSteamListenSocket_Invalid;
 }
 
 uint32_t Server::GetClientCount() const noexcept

@@ -54,6 +54,17 @@ std::optional<std::string> LaunchArgument(const char* acName)
     return std::nullopt;
 }
 
+bool ToBool(const std::string& acText, bool aDefault)
+{
+    std::string text = acText;
+    std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (text == "true" || text == "1" || text == "yes" || text == "on")
+        return true;
+    if (text == "false" || text == "0" || text == "no" || text == "off")
+        return false;
+    return aDefault;
+}
+
 uint16_t ToPort(const std::string& acText, uint16_t aDefault)
 {
     const auto value = std::strtoul(acText.c_str(), nullptr, 10);
@@ -89,14 +100,18 @@ void Settings::Load()
         settings.name = "V";
     if (auto password = value("password", "-password"))
         settings.password = password->c_str();
-    if (auto join = value("join_address", "-join"); join && !join->empty())
+    if (auto join = value("join_address", "-join"))
         settings.joinAddress = join->c_str();
+    if (auto steam = value("steam", "-steam"))
+        settings.steam = ToBool(*steam, settings.steam);
     if (auto port = value("port", "-port"))
         settings.port = ToPort(*port, settings.port);
     if (auto maxPlayers = value("max_players", "-max_players"))
         settings.maxPlayers = std::clamp<uint16_t>(ToPort(*maxPlayers, settings.maxPlayers), 2, 16);
 
-    spdlog::info("Co-op settings ({}): name {}, join {}, host port {}, up to {} players, {}", settings.iniPath.string(),
-                 settings.name, settings.joinAddress, settings.port, settings.maxPlayers,
+    spdlog::info("Co-op settings ({}): name {}, join {}, Steam {}, host port {}, up to {} players, {}",
+                 settings.iniPath.string(), settings.name,
+                 settings.joinAddress.empty() ? "through Steam" : settings.joinAddress.c_str(),
+                 settings.steam ? "on" : "off", settings.port, settings.maxPlayers,
                  settings.password.empty() ? "no password" : "password set");
 }

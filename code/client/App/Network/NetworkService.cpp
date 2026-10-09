@@ -10,6 +10,7 @@
 #include "Game/CharacterCustomizationSystem.h"
 
 #include <HostSession.h>
+#include <Network/SteamInterface.h>
 
 #include <random>
 
@@ -49,18 +50,41 @@ void NetworkService::ShowMessage(const std::string& acText)
         pWorld->ShowMessage(acText);
 }
 
+bool NetworkService::UseSteam(std::string& aWhy)
+{
+    const bool steam = Settings::Get().steam && SteamLobby::Init(aWhy);
+    if (!Settings::Get().steam)
+        aWhy = "Steam is off in coop.ini";
+
+    // The session and the connections to it run on Steam's networking or on the mod's own.
+    SteamInterface::SetSockets(steam ? SteamLobby::GetSockets() : nullptr,
+                               steam ? SteamLobby::GetNetworkingUtils() : nullptr);
+    return steam;
+}
+
 void NetworkService::Host()
 {
     if (m_busy)
         return;
 
     const auto& settings = Settings::Get();
+    const std::string password = settings.password.c_str();
+
+    std::string why;
+    const bool steam = UseSteam(why);
+    if (steam && (password.empty() || password == Settings::kDefaultPassword))
+    {
+        ShowMessage(fmt::format("Set a password of your own in {} first: on Steam, anyone with the same password "
+                                "finds your session.", settings.iniPath.string()));
+        return;
+    }
 
     HostSession::Settings session;
     session.Port = settings.port;
     session.MaxPlayers = settings.maxPlayers;
-    session.Password = settings.password.c_str();
+    session.Password = password;
     session.HostToken = MakeToken();
+    session.SteamP2P = steam;
 
     if (!HostSession::Start(session))
     {
@@ -68,13 +92,29 @@ void NetworkService::Host()
         return;
     }
 
-    // Our own game joins the session like everyone else, through the loopback address.
+    // Our own game joins the session like everyone else, through a connection within this process.
+    ISteamNetworkingSockets* pSockets = nullptr;
+    HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
+    if (!HostSession::OpenLocalConnection(pSockets, connection))
+    {
+        HostSession::Stop();
+        ShowMessage("Couldn't host: the session didn't let this game in.");
+        return;
+    }
+
     m_hostToken = session.HostToken;
-    m_address = fmt::format("127.0.0.1:{}", HostSession::GetPort());
+    m_address.clear();
+    m_hostName.clear();
+    m_viaSteam = steam;
     m_busy = true;
     m_refused = false;
-    ShowMessage("Starting a co-op session...");
-    Connect(m_address);
+
+    if (steam && HostSession::IsReachableThroughSteam())
+        m_lobby.Create(SteamLobby::KeyFor(password), settings.name.c_str(), settings.maxPlayers);
+    else if (steam)
+        ShowMessage("Steam didn't open the session to other players: they need your address (join_address).");
+
+    Adopt(pSockets, connection);
 }
 
 void NetworkService::Join()
@@ -82,17 +122,50 @@ void NetworkService::Join()
     if (m_busy)
         return;
 
+    const auto& settings = Settings::Get();
+    const std::string password = settings.password.c_str();
+
+    std::string why;
+    const bool steam = UseSteam(why);
+
     m_hostToken.clear();
-    m_address = Settings::Get().joinAddress.c_str();
-    m_busy = true;
+    m_hostName.clear();
     m_refused = false;
-    ShowMessage(fmt::format("Joining the co-op session at {}...", m_address));
-    if (!Connect(m_address))
+
+    // By address
+    if (!settings.joinAddress.empty())
     {
-        m_busy = false;
-        ShowMessage(fmt::format("Couldn't join: \"{}\" isn't an address (join_address in {}).", m_address,
-                                Settings::Get().iniPath.string()));
+        m_address = settings.joinAddress.c_str();
+        m_viaSteam = false;
+        m_busy = true;
+        ShowMessage(fmt::format("Joining the co-op session at {}...", m_address));
+        if (!Connect(m_address))
+        {
+            m_busy = false;
+            ShowMessage(fmt::format("Couldn't join: \"{}\" isn't an address (join_address in {}).", m_address,
+                                    settings.iniPath.string()));
+        }
+        return;
     }
+
+    // Through Steam, by the password
+    if (!steam)
+    {
+        ShowMessage(fmt::format("Couldn't join: {}. Set the host's address as join_address in {}.", why,
+                                settings.iniPath.string()));
+        return;
+    }
+    if (password.empty() || password == Settings::kDefaultPassword)
+    {
+        ShowMessage(fmt::format("Set the host's password in {} first.", settings.iniPath.string()));
+        return;
+    }
+
+    m_address.clear();
+    m_viaSteam = true;
+    m_busy = true;
+    ShowMessage("Looking for the co-op session with your password on Steam...");
+    m_lobby.Find(SteamLobby::KeyFor(password));
 }
 
 void NetworkService::Leave()
@@ -101,13 +174,49 @@ void NetworkService::Leave()
     Close();
     m_leaving = false;
 
-    // Still resolving the address: there was no connection yet to report its end.
+    // Still finding the host or resolving the address: there was no connection yet to report its end.
     m_busy = false;
     m_authenticated = false;
 
+    m_lobby.Leave();
     if (HostSession::IsRunning())
         HostSession::Stop();
     m_hostToken.clear();
+}
+
+void NetworkService::OnLobbyResult(const SteamLobby::Result& acResult)
+{
+    if (IsHosting())
+    {
+        // The lobby guests find us by
+        if (!acResult.Ok)
+            ShowMessage(fmt::format("{}: guests can only join with your address (join_address).", acResult.Error));
+        return;
+    }
+
+    // Looking for the host's lobby
+    if (!m_busy)
+        return; // left meanwhile
+
+    if (!acResult.Ok)
+    {
+        m_busy = false;
+        ShowMessage(fmt::format("Couldn't join: {}. Is the host's session running, with the same password?",
+                                acResult.Error));
+        return;
+    }
+
+    if (acResult.Matches > 1)
+        spdlog::warn("[Co-op] {} sessions on Steam have this password; joining {}'s", acResult.Matches,
+                     acResult.HostName);
+
+    m_hostName = acResult.HostName;
+    ShowMessage(fmt::format("Joining {}'s co-op session through Steam...", m_hostName));
+    if (!ConnectP2P(acResult.HostSteamId))
+    {
+        m_busy = false;
+        ShowMessage("Couldn't join: Steam didn't open the connection.");
+    }
 }
 
 void NetworkService::OnConsume(const void* apData, uint32_t aSize)
@@ -156,7 +265,10 @@ void NetworkService::OnDisconnected(EDisconnectReason aReason)
     }
     else if (!wasInSession)
     {
-        ShowMessage(fmt::format("Couldn't reach the host at {}.", m_address));
+        if (m_viaSteam && !m_hostName.empty())
+            ShowMessage(fmt::format("Couldn't reach {}'s session through Steam.", m_hostName));
+        else
+            ShowMessage(fmt::format("Couldn't reach the host at {}.", m_address));
     }
     else if (aReason == kKicked)
     {
@@ -170,6 +282,7 @@ void NetworkService::OnDisconnected(EDisconnectReason aReason)
     // Our own connection to the session we host is gone: end it for everyone.
     if (wasHosting && !m_leaving)
     {
+        m_lobby.Leave();
         HostSession::Stop();
         m_hostToken.clear();
     }
@@ -186,6 +299,8 @@ void NetworkService::OnGameUpdate(RED4ext::CGameApplication* apApp)
 {
     // The session this game hosts, if any, then our connection to it (or to the host).
     HostSession::Update();
+    if (auto result = m_lobby.Update())
+        OnLobbyResult(*result);
     Update();
 
     if (m_authenticated && IsHosting())
@@ -222,8 +337,11 @@ void NetworkService::HandleAuthentication(const PacketEvent<server::Authenticati
     m_settings = aResponse.get_settings();
     m_authenticated = true;
 
-    if (IsHosting())
-        ShowMessage(fmt::format("Hosting a co-op session (port {}). Guests hold \".\" to join.", HostSession::GetPort()));
+    if (IsHosting() && m_viaSteam)
+        ShowMessage("Hosting a co-op session. Guests with your password hold \".\" to join.");
+    else if (IsHosting())
+        ShowMessage(fmt::format("Hosting a co-op session on port {}. Guests hold \".\" to join with your address.",
+                                HostSession::GetPort()));
     else
         ShowMessage(fmt::format("Joined {}'s co-op session.", aResponse.get_host_name()));
 

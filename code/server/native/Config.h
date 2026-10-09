@@ -11,4 +11,6 @@ struct Config
     std::string Password{};
     // The host's own game authenticates with this (random per session), which makes it the story host.
     std::string HostToken{};
+    // Also accept Steam users connecting to the host's Steam user (needs the Steam client's sockets).
+    bool SteamP2P{false};
 };

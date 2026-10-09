@@ -14,8 +14,9 @@ upstream's fixes for **game patch 2.31**.
    newest build: [Actions](https://github.com/oxylol/cp2077-coop/actions/workflows/windows.yml) → a green run →
    Artifacts) and extract all of it into the game folder (the one with `bin`, `engine` and `r6`). It brings what
    the mod needs: RED4ext, redscript, Codeware, ArchiveXL, TweakXL, Input Loader.
-2. Open `red4ext\plugins\zzzCyberpunkCoop\coop.ini` and set the same `password` for everyone, and your `name`.
-   Guests set `join_address` to the host's address (coop.ini explains which).
+2. Open `red4ext\plugins\zzzCyberpunkCoop\coop.ini` and set the same `password` for everyone (one of your own:
+   on Steam it's how the guests find the host), and your `name`. That's all on Steam. Without Steam (GOG, Epic),
+   guests also set `join_address` to the host's address (coop.ini explains which).
 3. In the game, load a save. The host holds **`/`**: "Hosting a co-op session". Guests hold **`.`**: "Joined …'s
    co-op session". Holding **`/`** again leaves (the host leaving ends the session for everyone).
 
@@ -24,10 +25,11 @@ upstream's fixes for **game patch 2.31**.
 | Players | Up to 4 (`max_players`), each from their own save. |
 | Shared | The other players (looks, clothes, movement), their cars, the host's time of day (guests only move forward) and weather. |
 | Messages | Joins, leaves, wrong password, full session, lost connection: in the middle of the screen. |
-| Connecting | For now by address (`join_address`, default `127.0.0.1:11778`: two games on one PC). Over the internet: the host forwards UDP port 11778, or both use a virtual LAN (Tailscale, ZeroTier). Without either, through Steam: next. |
+| Connecting | On Steam: the host's session is found by the password and the connection is relayed by Steam, so no addresses and no port forwarding. Otherwise by address (`join_address`): same PC `127.0.0.1:11778`, home network, or over the internet with UDP port 11778 forwarded by the host or a virtual LAN (Tailscale, ZeroTier). |
 
 Two games on one PC: `powershell -ExecutionPolicy Bypass -File tools\coop\start-local.ps1 -Game "<game>\bin\x64\Cyberpunk2077.exe"`
-starts one as "Host" and one as "Guest". Don't save in both at once: they share the save folder.
+starts one as "Host" and one as "Guest", joining by address (one Steam user can't connect to itself through
+Steam). Don't save in both at once: they share the save folder.
 
 ## Build (Windows)
 
@@ -60,7 +62,7 @@ push, pull request and Monday (the zip is the run's artifact), and publishes it 
 | | |
 |---|---|
 | `code/server/native` | The co-op session (character and vehicle sync, players, password, host's world state), run by the host's game through `include/HostSession.h`. |
-| `code/client` | The mod (RED4ext plugin, `CyberpunkCoop.dll`): Host/Join/Leave (`App/Network/NetworkService.cpp`), settings (`App/Settings.cpp`), puppets, looks, vehicles (`App/World`), time and weather sync (`App/World/WorldSync.cpp`). |
+| `code/client` | The mod (RED4ext plugin, `CyberpunkCoop.dll`): Host/Join/Leave (`App/Network/NetworkService.cpp`), Steam lobbies and networking (`App/Network/SteamLobby.cpp`), settings (`App/Settings.cpp`, `code/assets/coop.ini`), puppets, looks, vehicles (`App/World`), time and weather sync (`App/World/WorldSync.cpp`). |
 | `code/assets` | Scripts (HUD and hold keys: `redscript/Ink/MultiplayerGameController.reds`), key bindings, tweaks, archives. |
 | `code/protocol` | The messages between the games. |
 | `code/tests` | The session tests. |
@@ -68,8 +70,7 @@ push, pull request and Monday (the zip is the run's artifact), and publishes it 
 
 ## Next
 
-1. Joining through Steam by password: no addresses, no port forwarding (Steam copies of the game).
-2. Shared story progress (quest state) and shared encounters.
+1. Shared story progress (quest state) and shared encounters.
 
 ## License
 

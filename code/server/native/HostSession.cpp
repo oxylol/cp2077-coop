@@ -22,6 +22,7 @@ bool HostSession::Start(const Settings& acSettings)
     config.MaxPlayer = acSettings.MaxPlayers;
     config.Password = acSettings.Password;
     config.HostToken = acSettings.HostToken;
+    config.SteamP2P = acSettings.SteamP2P;
 
     s_pServer = MakeUnique<GameServer>(config);
     if (!s_pServer->IsRunning())
@@ -65,4 +66,19 @@ bool HostSession::IsRunning()
 uint16_t HostSession::GetPort()
 {
     return s_pServer ? s_pServer->GetPort() : 0;
+}
+
+bool HostSession::IsReachableThroughSteam()
+{
+    return s_pServer && s_pServer->IsListeningP2P();
+}
+
+bool HostSession::OpenLocalConnection(ISteamNetworkingSockets*& apSockets, HSteamNetConnection& aConnection)
+{
+    if (!s_pServer)
+        return false;
+
+    aConnection = s_pServer->OpenLocalConnection();
+    apSockets = s_pServer->GetSockets();
+    return aConnection != k_HSteamNetConnection_Invalid;
 }
