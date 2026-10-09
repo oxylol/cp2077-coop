@@ -39,6 +39,7 @@ void VehicleSystem::OnDisconnected()
     m_vehicleGameId = std::nullopt;
     m_pendingMounts.clear();
     m_remoteDriven.clear();
+    m_notPlayerControlled.clear();
 }
 
 void VehicleSystem::OnInitialize(const RED4ext::JobHandle& aJob)
@@ -63,6 +64,27 @@ std::optional<uint64_t> VehicleSystem::GetVehicleRemoteId() const
 std::optional<Red::EntityID> VehicleSystem::GetVehicleGameId() const
 {
     return m_vehicleGameId;
+}
+
+bool VehicleSystem::IsRemoteDriven(Red::EntityID aVehicle) const
+{
+    return m_remoteDriven.count(aVehicle) != 0;
+}
+
+void VehicleSystem::OnDriving(Red::vehicle::BaseObject* apVehicle)
+{
+    const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               std::chrono::steady_clock::now().time_since_epoch())
+                                               .count());
+    if (m_lastDrivingLog && now - m_lastDrivingLog < 3000)
+        return;
+    m_lastDrivingLog = now;
+
+    const auto speed = apVehicle->rigidBody ? apVehicle->rigidBody->velocity.Magnitude() : 0.f;
+    spdlog::info("[Driving] {:x}: {:.1f} m/s, throttle {:.2f}, brake {:.2f}, steering {:.2f}, handbrake {:.2f}, "
+                 "physics 0x{:x}",
+                 m_vehicleRemoteId.value_or(0), speed, apVehicle->acceleration, apVehicle->deceleration,
+                 apVehicle->turnInput, apVehicle->handbrake, apVehicle->physicsState);
 }
 
 void VehicleSystem::OnVehicleEnter(Red::EntityID aVehicle, const Red::TweakDBID& aVehicleTdbid, Red::CName aName, const Red::Vector4& aPostion, const Red::Quaternion& aOrientation)
@@ -323,7 +345,9 @@ bool VehicleSystem::HandleVehicleControlMessage(const PacketEvent<server::Notify
         return true;
 
     m_vehicleRemoteId = aMessage.get_vehicle_id();
-    spdlog::info("[VehicleSystem] driving vehicle {:x}", *m_vehicleRemoteId);
+    spdlog::info("[VehicleSystem] driving vehicle {:x}{}", *m_vehicleRemoteId,
+                 m_remoteDriven.count(*m_vehicleGameId) ? " (still driven by another player here)" : "");
+    m_lastDrivingLog = 0;
 
     // Normally known already (HandleVehicleCreatedMessage). The others' moves don't move it while this player drives
     // (InterpolationSystem).
@@ -333,9 +357,21 @@ bool VehicleSystem::HandleVehicleControlMessage(const PacketEvent<server::Notify
         pInterpolation->TimePoints.clear();
 
     // Normally released when its previous driver got out (HandleVehicleExitMessage); only if that hasn't arrived yet.
-    // Nothing else is touched here: the game is still busy seating this player (or, after sliding over from the
-    // passenger seat, about to get them out).
+    // Nothing more is touched here than what this game did to the car itself: the game is still busy seating this
+    // player (or, after sliding over from the passenger seat, about to get them out).
     ReleaseRemoteDriving(*m_vehicleGameId, false);
+
+    // Another player drove it here before: it was told it isn't the player's to drive (DoMount, as the game's AI driving
+    // tells its cars), and nothing told it otherwise. This player sits at its wheel now.
+    if (m_notPlayerControlled.erase(*m_vehicleGameId))
+    {
+        static Core::RawFunc<4039776020UL, void (*)(Red::vehicle::BaseObject*, bool)> SetIsPlayerControlled;
+        if (const auto pVehicle = Red::Cast<Red::vehicle::BaseObject>(worldSystem->GetEntity(*m_vehicleGameId)))
+        {
+            SetIsPlayerControlled(pVehicle, true);
+            spdlog::info("[VehicleSystem] vehicle {} is the player's to drive again", m_vehicleGameId->hash);
+        }
+    }
 
     return true;
 }
@@ -375,6 +411,7 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
         static Core::RawFunc<4039776020UL, void (*)(Red::vehicle::BaseObject*, bool)> SetIsPlayerControlled;
         static Core::RawFunc<1585713002UL, void (*)(Red::vehicle::BaseObject*, bool)> SetKinematic;
         SetIsPlayerControlled(vehicle, false);
+        m_notPlayerControlled.insert(aVehicle);
         SetKinematic(vehicle, true);
         SetVehicleEngine(aVehicle, true);
     }

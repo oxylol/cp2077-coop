@@ -130,10 +130,12 @@ public native class VehicleSystem extends IScriptable {
             leaving.character = character;
             leaving.instant = true;
             vehicle.QueueEvent(leaving);
+            // "NoDriver" too, as the game's exits send it, once this exit is through: the same character may move
+            // to another seat of this car right away (its player got out on the other side).
             if VehicleComponent.IsDriverSlot(info.slotId.id) {
-                let noDriver = new AIEvent();
-                noDriver.name = n"NoDriver";
-                vehicle.QueueEvent(noDriver);
+                let noDriver = new CoopNoDriverCallback();
+                noDriver.vehicle = vehicle;
+                GameInstance.GetDelaySystem(game).DelayCallback(noDriver, 0.2);
             }
         }
         GameInstance.GetWorkspotSystem(game).UnmountFromVehicle(vehicle, character, true);
@@ -147,17 +149,6 @@ public native class VehicleSystem extends IScriptable {
             mounting.Unmount(request);
         }
 
-        // Telling the car the seat empties also reserves it while the character gets out (vehicleComponentPS.script
-        // OnVehicleStartedUnmountingEvent), until the unmount releases it. The game's exits get out with an animation
-        // in between; this one is instant, so the release came first and the seat stayed reserved: getting back into
-        // it crashed the game. Released again once the reservation is through.
-        if IsDefined(vehicle) {
-            let release = new VehicleSeatReservationEvent();
-            release.slotID = info.slotId.id;
-            release.reserve = false;
-            let ps = vehicle.GetVehiclePS();
-            GameInstance.GetDelaySystem(game).DelayPSEvent(ps.GetID(), ps.GetClassName(), release, 1.0);
-        }
         this.ApplyVehicleStance(character, false);
 
         // Upright, facing where it faced: in its seat it leaned with the car, and that tilt would stay.
@@ -240,4 +231,121 @@ public final static func CheckIfPassengersCanLeaveCar(gi: GameInstance, vehicleI
     wrappedMethod(gi, vehicleID, passengersCanLeaveCar, passengersCantLeaveCar);
     CoopRemoveStandIns(passengersCanLeaveCar);
     CoopRemoveStandIns(passengersCantLeaveCar);
+}
+
+
+// The car's own logic and another player's character in it: what's said about it, for the log.
+public static func CoopInSession() -> Bool {
+    let ui = GameInstance.GetBlackboardSystem(GetGameInstance()).Get(GetAllBlackboardDefs().UIGameData);
+    return IsDefined(ui) && ui.GetBool(GetAllBlackboardDefs().UIGameData.UIMultiplayerConnectedToServer);
+}
+
+public static func CoopLog(text: String) -> Void {
+    let vehicles = GameInstance.GetNetworkWorldSystem().GetVehicleSystem();
+    if IsDefined(vehicles) {
+        vehicles.Log(text);
+    }
+}
+
+public static func CoopDescribe(object: wref<GameObject>) -> String {
+    if !IsDefined(object) {
+        return "nobody";
+    }
+    if object.IsPlayer() {
+        return "the player";
+    }
+    if CoopIsStandIn(object) {
+        return "a co-op character";
+    }
+    return "an NPC";
+}
+
+// Another player's character sits in the vehicle (whatever the seat).
+public static func CoopStandInsAboard(vehicle: wref<VehicleObject>) -> Bool {
+    if !IsDefined(vehicle) {
+        return false;
+    }
+    let mounts = GameInstance.GetMountingFacility(vehicle.GetGame()).GetMountingInfoMultipleWithIds(vehicle.GetEntityID());
+    let i = 0;
+    while i < ArraySize(mounts) {
+        if GameInstance.GetDynamicEntitySystem().IsTagged(mounts[i].childId, n"CyberpunkMP.Puppet") {
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
+// "NoDriver" for a car another player's character got out of the driver seat of, unless someone sits at its wheel
+// again, or it still carries another player's character (VehicleComponent.SendAIEvent below).
+public class CoopNoDriverCallback extends DelayCallback {
+    public let vehicle: wref<VehicleObject>;
+
+    public func Call() -> Void {
+        if !IsDefined(this.vehicle) {
+            return;
+        }
+        if IsDefined(VehicleComponent.GetDriverMounted(this.vehicle.GetGame(), this.vehicle.GetEntityID())) {
+            return;
+        }
+        if CoopStandInsAboard(this.vehicle) {
+            CoopLog("car: no NoDriver, another player's character still rides in it");
+            return;
+        }
+        let noDriver = new AIEvent();
+        noDriver.name = n"NoDriver";
+        this.vehicle.QueueEvent(noDriver);
+    }
+}
+
+// The driver got out: the car tells its AI "NoDriver", which acts on the passengers left. Another player's character
+// among them was never seated by that AI: the game died, every time, right after the player got out of the driver seat
+// with one of them still on the passenger side. Their own player's game says when they get out.
+@wrapMethod(VehicleComponent)
+private final func SendAIEvent(eventName: CName) -> Void {
+    if Equals(eventName, n"NoDriver") && CoopStandInsAboard(this.GetVehicle()) {
+        CoopLog("car: no NoDriver, another player's character rides in it");
+        return;
+    }
+    wrappedMethod(eventName);
+}
+
+@wrapMethod(VehicleComponent)
+protected cb func OnMountingEvent(evt: ref<MountingEvent>) -> Bool {
+    let child = GameInstance.FindEntityByID(this.GetVehicle().GetGame(), evt.request.lowLevelMountingInfo.childId) as GameObject;
+    if CoopInSession() && (CoopIsStandIn(child) || IsDefined(child) && child.IsPlayer() || CoopStandInsAboard(this.GetVehicle())) {
+        CoopLog("car: " + CoopDescribe(child) + " in " + NameToString(evt.request.lowLevelMountingInfo.slotId.id));
+    }
+    return wrappedMethod(evt);
+}
+
+@wrapMethod(VehicleComponent)
+protected cb func OnUnmountingEvent(evt: ref<UnmountingEvent>) -> Bool {
+    let child = GameInstance.FindEntityByID(this.GetVehicle().GetGame(), evt.request.lowLevelMountingInfo.childId) as GameObject;
+    let logged = CoopInSession() && (CoopIsStandIn(child) || IsDefined(child) && child.IsPlayer() || CoopStandInsAboard(this.GetVehicle()));
+    if logged {
+        CoopLog("car: " + CoopDescribe(child) + " out of " + NameToString(evt.request.lowLevelMountingInfo.slotId.id));
+    }
+    let result = wrappedMethod(evt);
+    if logged {
+        CoopLog("car: " + CoopDescribe(child) + " out, done");
+    }
+    return result;
+}
+
+@wrapMethod(VehicleComponent)
+protected cb func OnVehicleStartedMountingEvent(evt: ref<VehicleStartedMountingEvent>) -> Bool {
+    if CoopInSession() && (CoopIsStandIn(evt.character) || IsDefined(evt.character) && evt.character.IsPlayer() || CoopStandInsAboard(this.GetVehicle())) {
+        CoopLog("car: " + CoopDescribe(evt.character) + (evt.isMounting ? " getting into " : " getting out of ") + NameToString(evt.slotID));
+    }
+    return wrappedMethod(evt);
+}
+
+// The player gets out where the side seat's taken: teleported out, the car pushed aside.
+@wrapMethod(VehicleEventsTransition)
+protected final func ExitWithTeleport(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>, validUnmountDirection: vehicleUnmountPosition, opt moveVehicle: Bool, opt skipUnmount: Bool) -> Void {
+    if CoopInSession() {
+        CoopLog("car: the player gets out by teleport" + (moveVehicle ? ", the car moved aside" : ""));
+    }
+    wrappedMethod(stateContext, scriptInterface, validUnmountDirection, moveVehicle, skipUnmount);
 }

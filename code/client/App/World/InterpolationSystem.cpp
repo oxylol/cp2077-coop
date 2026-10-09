@@ -89,6 +89,15 @@ void InterpolateEntity(flecs::entity aEntity, const EntityComponent& aEntityComp
         if (pSystem->GetVehicleSystem()->GetVehicleRemoteId() == aEntity.id())
             return;
 
+        // Moved only while another player sits at its wheel here: an update still on its way after they got out
+        // would put it back under remote control (simple movement) with nothing left to release it, and whoever sat
+        // at its wheel next couldn't drive it.
+        if (!pSystem->GetVehicleSystem()->IsRemoteDriven(aEntityComponent.Id))
+        {
+            aInterpolation.TimePoints.clear();
+            return;
+        }
+
         const auto vehicle = Red::Cast<Red::vehicle::BaseObject>(pSystem->GetEntity(aEntityComponent.Id));
         if (vehicle)
         {

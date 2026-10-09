@@ -57,6 +57,9 @@ public native class CharacterSync extends IScriptable {
         stance.state = crouched ? EnumInt(gamedataNPCStanceState.Crouch) : EnumInt(gamedataNPCStanceState.Stand);
         AnimationControllerComponent.ApplyFeature(npc, n"stanceState", stance);
         AnimationControllerComponent.SetAnimWrapperWeightOnOwnerAndItems(npc, n"inCrouch", crouched ? 1.0 : 0.0);
+        // The character is the player's own body (player_ma_tpp_cutscene.ent), whose graph may take the player's
+        // inputs rather than an NPC's: the player's state machine crouches it with this (locomotionTransitions.script).
+        AnimationControllerComponent.SetInputFloat(npc, n"crouch", crouched ? 1.0 : 0.0);
 
         // A drawn weapon is held ready, as NPCs in combat hold theirs.
         let highLevel = new AnimFeature_NPCState();
@@ -77,6 +80,20 @@ public native class CharacterSync extends IScriptable {
             }
         }
         AnimationControllerComponent.ApplyFeature(npc, n"upperBodyState", upper);
+
+        // Aiming down the sights, as the player's state machine tells the player's body (defaultTransition.script
+        // SetZoomStateAnimFeature), on the character and its weapon.
+        let aiming = !reloading && upperBody == EnumInt(gamePSMUpperBodyStates.Aim);
+        let aim = new AnimFeature_AimPlayer();
+        aim.SetAimState(aiming ? animAimState.Aimed : animAimState.Unaimed);
+        aim.SetZoomState(aiming ? animAimState.Aimed : animAimState.Unaimed);
+        aim.SetAimInTime(0.2);
+        aim.SetAimOutTime(0.2);
+        AnimationControllerComponent.ApplyFeature(npc, n"AnimFeature_AimPlayer", aim);
+        let held = ScriptedPuppet.GetWeaponRight(npc);
+        if IsDefined(held) {
+            AnimationControllerComponent.ApplyFeature(held, n"AnimFeature_AimPlayer", aim);
+        }
 
         if reloading && !wasReloading {
             AnimationControllerComponent.PushEventToReplicate(npc, n"Reload");

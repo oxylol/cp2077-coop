@@ -191,8 +191,10 @@ void NetworkWorldSystem::Update(uint64_t aTick)
     const auto delta = std::min(aTick - m_lastTick, 1000ull);
     m_lastTick = aTick;
 
+    // Not while the world unloads, or until it's back: nothing to move or show, and the game objects the systems would
+    // reach are being torn down (the host crashed, more than once, unloading the world right after a session).
     const auto service = Core::Container::Get<NetworkService>();
-    if (service && service->IsConnected())
+    if (service && service->IsConnected() && m_ready)
         progress(static_cast<float>(delta) / 1000.f);
 }
 
@@ -223,6 +225,8 @@ void NetworkWorldSystem::OnAfterWorldDetach()
 
 void NetworkWorldSystem::OnBeforeWorldDetach(RED4ext::world::RuntimeScene* aScene)
 {
+    spdlog::info("[NetworkWorldSystem] OnBeforeWorldDetach");
+    m_ready = false;
     IGameSystem::OnBeforeWorldDetach(aScene);
 
     m_appearanceSystem->OnBeforeWorldDetach(aScene);
@@ -300,6 +304,8 @@ void NetworkWorldSystem::UpdatePlayerLocation() const
             spdlog::info("Couldn't find vehicle: {}", vehicleId->hash);
             return;
         }
+
+        GetVehicleSystem()->OnDriving(vehicle);
 
         const auto& transform = vehicle->rigidBody->currentTransform;
         const auto cEntityPosition = transform.Position;

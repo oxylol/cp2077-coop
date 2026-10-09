@@ -27,7 +27,9 @@ bool IsFatal(DWORD aCode)
     case EXCEPTION_INT_DIVIDE_BY_ZERO:
     case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
     case EXCEPTION_IN_PAGE_ERROR:
+    case EXCEPTION_STACK_OVERFLOW:
     case 0xC0000374: // STATUS_HEAP_CORRUPTION
+    case 0xC0000420: // STATUS_ASSERTION_FAILURE
         return true;
     default:
         return false;
@@ -67,8 +69,46 @@ int Describe(uintptr_t aAddress, char* apOut, size_t aSize)
     return std::snprintf(apOut, aSize, "0x%llx", static_cast<unsigned long long>(aAddress));
 }
 
-// The return addresses from the crashed function up, unwound from its context. A frame that can't be read ends it.
-int Walk(CONTEXT aContext, DWORD64* apFrames, int aMax)
+// What a register points at, when it's an object with a vtable: the vtable (module+offset) and, with MSVC's run-time
+// type information, its class (".?AVFoo@@"). A bad call through an object names the object. 0 when it isn't one.
+int DescribeObject(uintptr_t aPointer, char* apOut, size_t aSize)
+{
+    __try
+    {
+        if (aPointer < 0x10000)
+            return 0;
+        const auto vtable = *reinterpret_cast<const uintptr_t*>(aPointer);
+        int written = std::snprintf(apOut, aSize, " [0x%llx]", static_cast<unsigned long long>(vtable));
+        HMODULE module = nullptr;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                reinterpret_cast<LPCWSTR>(vtable), &module) ||
+            !module)
+            return written;
+
+        written += std::snprintf(apOut + written, aSize - written, " = ");
+        written += Describe(vtable, apOut + written, aSize - written);
+
+        // x64: the complete object locator just before the vtable, signature 1, its type descriptor's offset from the
+        // image at +12 and its own at +20; the descriptor's name follows its two pointers.
+        const auto* pLocator = *reinterpret_cast<const uint32_t* const*>(vtable - sizeof(void*));
+        if (pLocator[0] == 1)
+        {
+            const auto image = reinterpret_cast<uintptr_t>(pLocator) - pLocator[5];
+            const auto* pName = reinterpret_cast<const char*>(image + pLocator[3] + 2 * sizeof(void*));
+            if (pName[0] == '.' && pName[1] == '?')
+                written += std::snprintf(apOut + written, aSize - written, " %.160s", pName);
+        }
+        return written;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return 0;
+    }
+}
+
+// The return addresses from the crashed function up, unwound from aContext (which is changed: a copy, kept off the
+// stack, as a stack overflow leaves little of it). A frame that can't be read ends it.
+int Walk(CONTEXT& aContext, DWORD64* apFrames, int aMax)
 {
     int count = 0;
     __try
@@ -208,22 +248,147 @@ LONG CALLBACK OnException(EXCEPTION_POINTERS* apInfo)
                           kind == 0 ? "reading" : kind == 1 ? "writing" : "executing",
                           static_cast<unsigned long long>(pRecord->ExceptionInformation[1])));
     }
-    add(std::snprintf(s_text + length, sizeof(s_text) - length, "\r\n[crash] Call stack:\r\n"));
+    add(std::snprintf(s_text + length, sizeof(s_text) - length, "\r\n"));
 
-    DWORD64 frames[48]{};
-    const int count = Walk(*apInfo->ContextRecord, frames, 48);
+    // The registers a bad call or read went through, with what they point at.
+    if (pRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION)
+    {
+        const auto& context = *apInfo->ContextRecord;
+        const struct
+        {
+            const char* Name;
+            DWORD64 Value;
+        } registers[] = {{"rax", context.Rax}, {"rbx", context.Rbx}, {"rcx", context.Rcx}, {"rdx", context.Rdx},
+                         {"rsi", context.Rsi}, {"rdi", context.Rdi}, {"r8", context.R8},   {"r9", context.R9}};
+        for (const auto& reg : registers)
+        {
+            add(std::snprintf(s_text + length, sizeof(s_text) - length, "[crash] %s 0x%llx", reg.Name,
+                              static_cast<unsigned long long>(reg.Value)));
+            add(DescribeObject(static_cast<uintptr_t>(reg.Value), s_text + length, sizeof(s_text) - length));
+            add(std::snprintf(s_text + length, sizeof(s_text) - length, "\r\n"));
+        }
+    }
+    add(std::snprintf(s_text + length, sizeof(s_text) - length, "[crash] Call stack:\r\n"));
+
+    static DWORD64 s_frames[48];
+    static CONTEXT s_context;
+    s_context = *apInfo->ContextRecord;
+    const int count = Walk(s_context, s_frames, 48);
     for (int i = 0; i < count; ++i)
     {
         add(std::snprintf(s_text + length, sizeof(s_text) - length, "[crash]   %2d ", i));
-        add(Describe(static_cast<uintptr_t>(frames[i]), s_text + length, sizeof(s_text) - length));
+        add(Describe(static_cast<uintptr_t>(s_frames[i]), s_text + length, sizeof(s_text) - length));
         add(std::snprintf(s_text + length, sizeof(s_text) - length, "\r\n"));
     }
 
     Append(s_text, length);
-    AppendSourceLines(frames, count);
+    // Not with the stack used up: symbols need more of it than is left.
+    if (pRecord->ExceptionCode != EXCEPTION_STACK_OVERFLOW)
+        AppendSourceLines(s_frames, count);
     return EXCEPTION_CONTINUE_SEARCH;
 }
+
+// The watchdog: the main loop beats every frame (Heartbeat); when it stops for this long, where the main thread is goes
+// into the log, once per stop. A game that froze, or died without an exception, then still says where it was.
+constexpr ULONGLONG kStallMs = 15'000;
+std::atomic<ULONGLONG> s_lastBeat{0};
+HANDLE s_mainThread = nullptr;
+
+void ReportStall(ULONGLONG aStalledMs)
+{
+    static char s_text[4096];
+    int length = 0;
+    const auto add = [&](int aWritten)
+    {
+        if (aWritten > 0)
+            length = (length + aWritten < static_cast<int>(sizeof(s_text))) ? length + aWritten
+                                                                             : static_cast<int>(sizeof(s_text)) - 1;
+    };
+
+    SYSTEMTIME time{};
+    GetLocalTime(&time);
+    add(std::snprintf(s_text + length, sizeof(s_text) - length,
+                      "[%04u-%02u-%02u %02u:%02u:%02u.%03u] [watchdog] The game's main loop hasn't run for %llu s "
+                      "(stuck, or a long load). Where it is:\r\n",
+                      time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond, time.wMilliseconds,
+                      aStalledMs / 1000));
+
+    // Only paused for its registers: walked after, so nothing here can wait on something the paused thread holds.
+    static CONTEXT s_context;
+    s_context = {};
+    s_context.ContextFlags = CONTEXT_FULL;
+    if (SuspendThread(s_mainThread) == static_cast<DWORD>(-1))
+        return;
+    const bool read = GetThreadContext(s_mainThread, &s_context) != FALSE;
+    ResumeThread(s_mainThread);
+    if (!read)
+        return;
+
+    static DWORD64 s_frames[48];
+    const int count = Walk(s_context, s_frames, 48);
+    for (int i = 0; i < count; ++i)
+    {
+        add(std::snprintf(s_text + length, sizeof(s_text) - length, "[watchdog]   %2d ", i));
+        add(Describe(static_cast<uintptr_t>(s_frames[i]), s_text + length, sizeof(s_text) - length));
+        add(std::snprintf(s_text + length, sizeof(s_text) - length, "\r\n"));
+    }
+    Append(s_text, length);
+}
+
+DWORD WINAPI Watch(void*)
+{
+    ULONGLONG stalledSince = 0;
+    for (;;)
+    {
+        Sleep(1000);
+        const auto last = s_lastBeat.load();
+        const auto now = GetTickCount64();
+        if (now - last >= kStallMs)
+        {
+            if (!stalledSince)
+            {
+                stalledSince = last;
+                ReportStall(now - last);
+            }
+        }
+        else if (stalledSince)
+        {
+            char text[160];
+            const int length = std::snprintf(text, sizeof(text), "[watchdog] Running again after %llu s.\r\n",
+                                             (last - stalledSince) / 1000);
+            if (length > 0)
+                Append(text, length);
+            stalledSince = 0;
+        }
+    }
+}
 } // namespace
+
+void Support::CrashLog::Heartbeat()
+{
+    s_lastBeat = GetTickCount64();
+    if (s_mainThread || !s_logPath[0])
+        return;
+
+    if (!DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &s_mainThread,
+                         THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0))
+    {
+        s_mainThread = INVALID_HANDLE_VALUE; // not tried again
+        return;
+    }
+
+    // Room for the crash report should the main thread run out of stack.
+    ULONG guarantee = 64 * 1024;
+    SetThreadStackGuarantee(&guarantee);
+
+    // The thread keeps the mod loaded for as long as it runs (the game's whole life): never left running code that's
+    // gone.
+    HMODULE self = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                       reinterpret_cast<LPCWSTR>(reinterpret_cast<uintptr_t>(&Watch)), &self);
+    if (const HANDLE thread = CreateThread(nullptr, 64 * 1024, &Watch, nullptr, 0, nullptr))
+        CloseHandle(thread);
+}
 
 void Support::CrashLog::Install(const std::filesystem::path& acLogPath)
 {

@@ -236,6 +236,16 @@ void CharacterSync::HandleCharacterState(const PacketEvent<server::NotifyCharact
         state.WeaponInHand = false;
         state.WeaponAttempts = 0;
     }
+
+    // What arrives, in the log (the game's numbers: locomotion gamePSMLocomotionStates, 1 crouching; upper body
+    // gamePSMUpperBodyStates, 6 aiming down the sights; weapon gamePSMRangedWeaponStates). Not every shot's.
+    if (state.Locomotion != aMessage.get_locomotion() || state.UpperBody != aMessage.get_upper_body() ||
+        state.Weapon != aMessage.get_weapon())
+    {
+        spdlog::info("[CharacterSync] character {:x}: locomotion {}, upper body {}, weapon {:x} ({})", aMessage.get_id(),
+                     aMessage.get_locomotion(), aMessage.get_upper_body(), aMessage.get_weapon(),
+                     aMessage.get_weapon_state());
+    }
     state.Locomotion = aMessage.get_locomotion();
     state.UpperBody = aMessage.get_upper_body();
     state.WeaponState = aMessage.get_weapon_state();

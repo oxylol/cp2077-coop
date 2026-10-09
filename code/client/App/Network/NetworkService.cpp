@@ -8,6 +8,7 @@
 #include "App/World/AppearanceSystem.h"
 #include "App/Settings.h"
 #include "Game/CharacterCustomizationSystem.h"
+#include "Support/Spdlog/CrashLog.h"
 
 #include <HostSession.h>
 #include <Network/SteamInterface.h>
@@ -303,6 +304,8 @@ void NetworkService::OnUpdate()
 
 void NetworkService::OnGameUpdate(RED4ext::CGameApplication* apApp)
 {
+    Support::CrashLog::Heartbeat();
+
     // The session this game hosts, if any, then our connection to it (or to the host).
     HostSession::Update();
     if (auto result = m_lobby.Update())

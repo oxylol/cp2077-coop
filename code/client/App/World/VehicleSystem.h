@@ -3,6 +3,7 @@
 #include "Core/Stl.hpp"
 #include "RED4ext/Scripting/Natives/Generated/Vector4.hpp"
 #include "RED4ext/Scripting/Natives/Generated/Quaternion.hpp"
+#include "RED4ext/Scripting/Natives/vehicleBaseObject.hpp"
 
 struct VehicleSystem : RED4ext::IScriptable
 {
@@ -22,6 +23,11 @@ struct VehicleSystem : RED4ext::IScriptable
 
     std::optional<uint64_t> GetVehicleRemoteId() const;
     std::optional<Red::EntityID> GetVehicleGameId() const;
+    // Another player sits at its wheel here: their updates move it (InterpolationSystem), nothing else does.
+    bool IsRemoteDriven(Red::EntityID aVehicle) const;
+    // This player drives aVehicle (NetworkWorldSystem::UpdatePlayerLocation, as it sends its moves): every few seconds,
+    // how it goes, into the log.
+    void OnDriving(Red::vehicle::BaseObject* apVehicle);
 
 protected:
 
@@ -55,6 +61,9 @@ private:
     std::optional<Red::EntityID> m_vehicleGameId;
     // Vehicles here with another player at the wheel: kinematic, moved by that player's updates (DoMount).
     Core::Set<Red::EntityID> m_remoteDriven;
+    // Vehicles told they're not the player's to drive (DoMount), until this player takes their wheel.
+    Core::Set<Red::EntityID> m_notPlayerControlled;
+    uint64_t m_lastDrivingLog{0};
 };
 
 RTTI_DEFINE_CLASS(VehicleSystem, { 

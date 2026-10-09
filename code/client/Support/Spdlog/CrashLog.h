@@ -7,4 +7,7 @@ namespace Support::CrashLog
 {
 void Install(const std::filesystem::path& acLogPath);
 void Uninstall();
+// From the main loop, every frame (the first call is taken to be on the main thread): the watchdog logs where the main
+// thread is when this stops for a while.
+void Heartbeat();
 } // namespace Support::CrashLog
