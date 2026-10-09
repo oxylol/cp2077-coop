@@ -280,11 +280,6 @@ bool Server::IsListeningP2P() const noexcept
     return m_p2pListenSock != k_HSteamListenSocket_Invalid;
 }
 
-bool Server::IsListeningDualStack() const noexcept
-{
-    SteamNetworkingIPAddr address{};
-    return IsListening() && m_pInterface->GetListenSocketAddress(m_listenSock, &address) && !address.IsIPv4();
-}
 
 uint32_t Server::GetClientCount() const noexcept
 {
