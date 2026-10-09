@@ -209,7 +209,7 @@ void WorldSync::Reset()
     if (m_weather)
     {
         ResetWeather();
-        m_weather = {};
+        m_weather = Red::CName();
     }
     m_nextReport = {};
 }
