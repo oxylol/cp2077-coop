@@ -54,6 +54,24 @@ message ReportWorldState {
     uint64 weather = 2;   // the weather state's name (CName hash), 0 when unknown
 }
 
+// What the others' games show on this player's character besides where it is: its stance and the weapon in its hand.
+// Sent when it changes; the session keeps the latest for players who see the character later. The states are the
+// player state machine's blackboard values, as the game (CharacterSync.reds) reads and applies them.
+message CharacterStateRequest {
+    uint64 id = 1;           // the character (SpawnCharacterResponse.id)
+    uint32 locomotion = 2;   // gamePSMLocomotionStates (crouching, sliding, ...)
+    uint32 upper_body = 3;   // gamePSMUpperBodyStates (aiming, reloading)
+    uint32 weapon_state = 4; // gamePSMRangedWeaponStates (reloading)
+    uint64 weapon = 5;       // in the right hand: TweakDBID (name hash and length), 0 for none
+}
+
+// Shots fired with the weapon in hand since the last of these.
+message CharacterShotRequest {
+    bool unreliable = 1000; // This is just a tag to indicate that this message is unreliable
+    uint64 id = 1;
+    uint32 count = 2;
+}
+
 message Protocol {
     oneof content {
         AuthenticationRequest authentication_request = 1;
@@ -62,5 +80,7 @@ message Protocol {
         EnterVehicleRequest enter_vehicle_request = 6;
         ExitVehicleRequest exit_vehicle_request = 7;
         ReportWorldState report_world_state = 8;
+        CharacterStateRequest character_state_request = 9;
+        CharacterShotRequest character_shot_request = 10;
     }
 }

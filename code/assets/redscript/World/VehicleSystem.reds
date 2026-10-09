@@ -42,100 +42,66 @@ public native class VehicleSystem extends IScriptable {
         this.OnVehicleReady(event.GetEntity().GetEntityID());
     }
 
+    // Seats another player's character, as the game seats the player (vehicleTransition.script EnteringEvents): the
+    // mount, the seat's animation set, and the seat's workspot, which animates sitting, driving and steering.
     public func EnterVehicle(character_id: EntityID, vehicle_id: EntityID, sit_position: CName) -> Bool {
-        LogChannel(n"DEBUG", "[VehicleSystem] Entering Vehicle with seat");
-        
-        // works fine
+        let game = GetGameInstance();
+        let character = GameInstance.GetDynamicEntitySystem().GetEntity(character_id) as GameObject;
+        let vehicle = GameInstance.FindEntityByID(game, vehicle_id) as VehicleObject;
+        if !IsDefined(character) || !IsDefined(vehicle) {
+            LogChannel(n"DEBUG", "[VehicleSystem] EnterVehicle: character or vehicle not found");
+            return false;
+        }
 
-        let entity_system = GameInstance.GetDynamicEntitySystem();
+        let info: MountingInfo;
+        info.parentId = vehicle_id;
+        info.childId = character_id;
+        info.slotId.id = sit_position;
+        let data = new MountEventData();
+        data.slotName = sit_position;
+        data.mountParentEntityId = vehicle_id;
+        data.isInstant = true;
+        data.ignoreHLS = true;
+        // The vehicle reads these (VehicleComponent.OnMountingEvent).
+        let options = new MountEventOptions();
+        options.alive = true;
+        options.occupiedByNonFriendly = false;
+        data.mountEventOptions = options;
+        let request = new MountingRequest();
+        request.lowLevelMountingInfo = info;
+        request.preservePositionAfterMounting = true;
+        request.mountData = data;
+        GameInstance.GetMountingFacility(game).Mount(request);
 
-        // let vehicle = entity_system.GetEntity(vehicle_id) as VehicleObject;
-        // if IsDefined(vehicle) {
-        //     let component = vehicle.GetVehicleComponent();
-        //     component.MountEntityToSlot(vehicle_id, character_id, sit_position);
-        // } else {
-        //     LogChannel(n"DEBUG", "[VehicleSystem] NOT DEFINED");
-        // }
-
-        // maybe better? makes them walk to the car - kinda cool
-
-        // if !AIBehaviorScriptBase.GetAIComponent(context).GetAssignedVehicleData(vehicleID, vehicleSlotID) {
-        //     this.m_result = AIbehaviorUpdateOutcome.FAILURE;
-        //     return;
-        // };
-        // if VehicleComponent.IsSlotOccupied(ScriptExecutionContext.GetOwner(context).GetGame(), vehicleID, vehicleSlotID) {
-        //     this.m_result = AIbehaviorUpdateOutcome.FAILURE;
-        //     return;
-        // };
-
-
-        let mountData = new MountEventData();
-        mountData.slotName = sit_position;
-        mountData.mountParentEntityId = vehicle_id;
-        mountData.isInstant = true;
-        // mountData.isInstant = false;
-        mountData.ignoreHLS = true;
-
-        let evt = new MountAIEvent();
-        evt.name = n"Mount";
-        evt.data = mountData;
-
-        // let entity_system = GameInstance.GetDynamicEntitySystem();
-        let character = entity_system.GetEntity(character_id) as GameObject;
-        character.QueueEvent(evt);
-
-
-
-        // let evt: ref<VehicleStartedMountingEvent> = new VehicleStartedMountingEvent();
-
-        // evt.slotID = sit_position;
-        // evt.isMounting = true;
-        // evt.character = character;
-        // // evt.animationSlotName = this.m_exitSlot;
-        // vehicle.QueueEvent(evt);
+        let animVariables = VehicleComponent.SetAnimsetOverrideForPassenger(character, vehicle_id, sit_position, 1.0);
+        let workspots = GameInstance.GetWorkspotSystem(game);
+        let synchronized: array<EntityID>;
+        workspots.StopNpcInWorkspot(character);
+        workspots.MountToVehicle(vehicle, character, 0.0, 0.0, n"OccupantSlots", sit_position, synchronized, n"default", animVariables);
         return true;
     }
 
+    // Takes another player's character out of its seat.
     public func ExitVehicle(character_id: EntityID) -> Bool {
-        LogChannel(n"DEBUG", "[VehicleSystem] Exiting vehicle");
+        let game = GetGameInstance();
+        let character = GameInstance.GetDynamicEntitySystem().GetEntity(character_id) as GameObject;
+        if !IsDefined(character) {
+            return false;
+        }
 
-        let entity_system = GameInstance.GetDynamicEntitySystem();
-        let character = entity_system.GetEntity(character_id) as GameObject;
-
-        // not working
-        // let mountingInfo = GameInstance.GetMountingFacility(GetGameInstance()).GetMountingInfoSingleWithObjects(character);
-        // let vehicle_id = mountingInfo.parentId;
-        // let vehicle = entity_system.GetEntity(vehicle_id) as VehicleObject;
-
-
-        // let mountData = new MountEventData();
-        // mountData.slotName = n"None";
-        // mountData.mountParentEntityId = vehicle_id;
-        // mountData.isInstant = true;
-        // // mountData.isInstant = false;
-        // mountData.ignoreHLS = true;
-
-        // let evt = new MountAIEvent();
-        // evt.name = n"Mount";
-        // evt.data = mountData;
-
-        // let entity_system = GameInstance.GetDynamicEntitySystem();
-        // let character = entity_system.GetEntity(character_id);
-        // character.QueueEvent(evt);
-
-        // plays animation, but messes up orientation maybe? also crashes the game sometimes
-        let exitEvent = new AIEvent();
-        exitEvent.name = n"ExitVehicle";
-        character.QueueEvent(exitEvent);
-
-        // let evt: ref<VehicleStartedMountingEvent> = new VehicleStartedMountingEvent();
-
-        // evt.slotID = vehicle.GetSlotIdForMountedObject(character);
-        // evt.isMounting = false;
-        // evt.character = character;
-        // // evt.animationSlotName = this.m_exitSlot;
-        // vehicle.QueueEvent(evt);
-
+        let mounting = GameInstance.GetMountingFacility(game);
+        let info = mounting.GetMountingInfoSingleWithObjects(character);
+        let vehicle = GameInstance.FindEntityByID(game, info.parentId) as VehicleObject;
+        GameInstance.GetWorkspotSystem(game).UnmountFromVehicle(vehicle, character, true);
+        if EntityID.IsDefined(info.parentId) {
+            VehicleComponent.SetAnimsetOverrideForPassenger(character, info.parentId, info.slotId.id, 0.0);
+            let data = new MountEventData();
+            data.mountEventOptions = new MountEventOptions();
+            let request = new UnmountingRequest();
+            request.lowLevelMountingInfo = info;
+            request.mountData = data;
+            mounting.Unmount(request);
+        }
         return true;
     }
 

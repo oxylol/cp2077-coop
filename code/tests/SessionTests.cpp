@@ -43,6 +43,8 @@ struct TestClient final : Client
         m_dispatcher.sink<PacketEvent<server::SpawnCharacterResponse>>().connect<&TestClient::OnSpawned>(this);
         m_dispatcher.sink<PacketEvent<server::NotifyCharacterLoad>>().connect<&TestClient::OnCharacterLoad>(this);
         m_dispatcher.sink<PacketEvent<server::NotifyEntityMove>>().connect<&TestClient::OnEntityMove>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyCharacterState>>().connect<&TestClient::OnCharacterState>(this);
+        m_dispatcher.sink<PacketEvent<server::NotifyCharacterShot>>().connect<&TestClient::OnCharacterShot>(this);
     }
 
     // What the game sends once it's in: its character, where it stands, what it wears and looks like.
@@ -68,6 +70,25 @@ struct TestClient final : Client
         position.set_x(aX);
         request.set_position(position);
         request.set_tick(aTick);
+        SendMessage(request);
+    }
+
+    void SendState(uint64_t aId, uint32_t aLocomotion, uint64_t aWeapon)
+    {
+        client::CharacterStateRequest request;
+        request.set_id(aId);
+        request.set_locomotion(aLocomotion);
+        request.set_upper_body(6);
+        request.set_weapon_state(5);
+        request.set_weapon(aWeapon);
+        SendMessage(request);
+    }
+
+    void Shoot(uint32_t aCount)
+    {
+        client::CharacterShotRequest request;
+        request.set_id(*OwnCharacter);
+        request.set_count(aCount);
         SendMessage(request);
     }
 
@@ -132,6 +153,18 @@ struct TestClient final : Client
     {
         Moves.emplace_back(acEvent.get_id(), acEvent.get_position().get_x());
     }
+    void OnCharacterState(const PacketEvent<server::NotifyCharacterState>& acEvent)
+    {
+        // A state only makes sense for a character the session loaded here before.
+        const bool loaded = std::any_of(Characters.begin(), Characters.end(),
+                                        [&](const Character& acCharacter) { return acCharacter.Id == acEvent.get_id(); });
+        States.push_back({acEvent.get_id(), acEvent.get_locomotion(), acEvent.get_upper_body(), acEvent.get_weapon_state(),
+                          acEvent.get_weapon(), loaded});
+    }
+    void OnCharacterShot(const PacketEvent<server::NotifyCharacterShot>& acEvent)
+    {
+        Shots.push_back({acEvent.get_id(), acEvent.get_count()});
+    }
 
     static ScratchAllocator& GetScratch()
     {
@@ -160,6 +193,24 @@ struct TestClient final : Client
     std::optional<uint64_t> OwnCharacter;
     std::vector<Character> Characters; // the others', as the session loads them
     std::vector<std::pair<uint64_t, float>> Moves;
+
+    struct State
+    {
+        uint64_t Id;
+        uint32_t Locomotion;
+        uint32_t UpperBody;
+        uint32_t WeaponState;
+        uint64_t Weapon;
+        bool AfterLoad;
+    };
+    std::vector<State> States;
+
+    struct Shot
+    {
+        uint64_t Id;
+        uint32_t Count;
+    };
+    std::vector<Shot> Shots;
 
 private:
     entt::dispatcher m_dispatcher;
@@ -349,6 +400,77 @@ TEST_CASE("Players get each other's characters with their items and look, then t
         return std::any_of(host.Moves.begin(), host.Moves.end(),
                            [&](const auto& acMove) { return acMove.first == *guest.OwnCharacter && acMove.second == 3.f; });
     }));
+
+    HostSession::Shutdown();
+}
+
+TEST_CASE("Players see each other's stance and weapon, also when they arrive later, and each other's shots")
+{
+    HostSession::Settings settings;
+    settings.Port = kPort + 30;
+    settings.Password = "secret";
+    settings.HostToken = "host-token";
+    REQUIRE(HostSession::Start(settings));
+
+    TestClient host("Host", "", "host-token");
+    TestClient guest("Guest", "secret");
+    TestClient late("Late", "secret");
+    std::vector<TestClient*> all{&host, &guest, &late};
+
+    ISteamNetworkingSockets* pSockets = nullptr;
+    HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
+    REQUIRE(HostSession::OpenLocalConnection(pSockets, connection));
+    REQUIRE(host.Adopt(pSockets, connection));
+    guest.Connect("127.0.0.1:" + std::to_string(HostSession::GetPort()));
+    REQUIRE(Pump(all, [&] { return host.Accepted.has_value() && guest.Accepted.has_value(); }));
+
+    host.SpawnCharacter(1.f, {}, {});
+    guest.SpawnCharacter(2.f, {}, {});
+    REQUIRE(Pump(all, [&] {
+        return host.OwnCharacter && guest.OwnCharacter && !host.Characters.empty() && !guest.Characters.empty();
+    }));
+    const auto hostCharacter = *host.OwnCharacter;
+
+    // The host crouches with a pistol in hand: the guest's game gets it, the host's own doesn't.
+    constexpr uint64_t kPistol = 0x14'0D8C'2A51ull;
+    host.SendState(hostCharacter, 1, kPistol);
+    REQUIRE(Pump(all, [&] { return !guest.States.empty(); }));
+    CHECK(guest.States[0].Id == hostCharacter);
+    CHECK(guest.States[0].Locomotion == 1);
+    CHECK(guest.States[0].UpperBody == 6);
+    CHECK(guest.States[0].WeaponState == 5);
+    CHECK(guest.States[0].Weapon == kPistol);
+
+    // Nobody changes another player's character.
+    guest.SendState(hostCharacter, 99, 0);
+    guest.SendState(0, 99, 0);
+    guest.SendState(0xFFFF'FFFFull, 99, 0);
+
+    // Who arrives later gets the character, then its latest state.
+    late.Connect("127.0.0.1:" + std::to_string(HostSession::GetPort()));
+    REQUIRE(Pump(all, [&] { return late.Accepted.has_value(); }));
+    REQUIRE(*late.Accepted);
+    late.SpawnCharacter(3.f, {}, {});
+    REQUIRE(Pump(all, [&] {
+        return std::any_of(late.States.begin(), late.States.end(), [&](const auto& acState) { return acState.Id == hostCharacter; });
+    }));
+    const auto state = std::find_if(late.States.begin(), late.States.end(), [&](const auto& acState) { return acState.Id == hostCharacter; });
+    CHECK(state->AfterLoad);
+    CHECK(state->Locomotion == 1);
+    CHECK(state->Weapon == kPistol);
+    CHECK(guest.States.size() == 1);
+    CHECK(host.States.empty());
+
+    // Shots go to the others as they come, a burst at most.
+    host.Shoot(3);
+    host.Shoot(1000);
+    REQUIRE(Pump(all, [&] { return guest.Shots.size() == 2 && late.Shots.size() == 2; }));
+    // (unreliable: in any order)
+    std::sort(guest.Shots.begin(), guest.Shots.end(), [](const auto& acA, const auto& acB) { return acA.Count < acB.Count; });
+    CHECK(guest.Shots[0].Id == hostCharacter);
+    CHECK(guest.Shots[0].Count == 3);
+    CHECK(guest.Shots[1].Count == 30);
+    CHECK(host.Shots.empty());
 
     HostSession::Shutdown();
 }

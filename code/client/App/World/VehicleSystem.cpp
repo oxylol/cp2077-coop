@@ -235,15 +235,17 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
 {
     const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
     const auto character = worldSystem->GetEntityIdByServerId(aCharacter);
-    const auto vehicle = Red::Cast<Red::vehicle::WheeledBaseObject>(worldSystem->GetEntity(aVehicle));
     const auto handle = Red::Handle(this);
-    bool res;
+    bool res = false;
 
-    Red::Detail::CallFunctionWithArgs(m_pEnterVehicle, handle, res, character, vehicle->id, aSit);
+    // The script finds the vehicle itself: the player's own car isn't one of ours (GetEntity finds only ours).
+    if (!Red::Detail::CallFunctionWithArgs(m_pEnterVehicle, handle, res, character, aVehicle, aSit) || !res)
+        spdlog::warn("[VehicleSystem] seating character {} in vehicle {} failed", character.hash, aVehicle.hash);
 
     aCharacter.add<AttachedComponent>();
 
-    if (!m_vehicleGameId || *m_vehicleGameId != aVehicle)
+    const auto vehicle = Red::Cast<Red::vehicle::WheeledBaseObject>(worldSystem->GetEntity(aVehicle));
+    if (vehicle && (!m_vehicleGameId || *m_vehicleGameId != aVehicle))
     {
         // called from vehicle::actions::DriveAction::OnStart
         // static Core::RawFunc<4018412273UL, void (*)(Red::move::Component *, IMoveController &)> AttachLocomotionController

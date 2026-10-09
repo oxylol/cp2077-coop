@@ -59,6 +59,13 @@ protected:
     void HandleMoveEntityRequest(PacketEvent<client::MoveEntityRequest>& aMessage) noexcept;
     void HandleEnterVehicleRequest(PacketEvent<client::EnterVehicleRequest>& aMessage) noexcept;
     void HandleExitVehicleRequest(PacketEvent<client::ExitVehicleRequest>& aMessage) noexcept;
+    void HandleCharacterStateRequest(PacketEvent<client::CharacterStateRequest>& aMessage) noexcept;
+    void HandleCharacterShotRequest(PacketEvent<client::CharacterShotRequest>& aMessage) noexcept;
+
+    // aId if it's an entity the player on aConnection owns, otherwise none (with a warning naming aWhat).
+    flecs::entity GetOwned(uint64_t aId, ConnectionId aConnection, const char* aWhat) noexcept;
+    // The character's state, if its player sent one, to aConnection.
+    static void SendState(flecs::entity aEntity, ConnectionId aConnection) noexcept;
 
     static server::NotifyCharacterLoad Serialize(flecs::entity aEntity) noexcept;
 

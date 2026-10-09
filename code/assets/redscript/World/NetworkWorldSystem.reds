@@ -13,6 +13,7 @@ public native class NetworkWorldSystem extends IGameSystem {
     public native func GetAppearanceSystem() -> ref<AppearanceSystem>;
     public native func GetInterpolationSystem() -> ref<InterpolationSystem>;
     public native func GetVehicleSystem() -> ref<VehicleSystem>;
+    public native func GetCharacterSync() -> ref<CharacterSync>;
 
     public func OnConnected() -> Void {
         // let evt: ref<ConnectedToServer>;

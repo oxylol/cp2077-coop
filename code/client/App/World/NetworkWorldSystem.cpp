@@ -430,6 +430,9 @@ void NetworkWorldSystem::OnInitialize(const RED4ext::JobHandle& aJob)
 
     m_vehicleSystem = RED4ext::MakeHandle<VehicleSystem>();
     m_vehicleSystem->OnInitialize(aJob);
+
+    m_characterSync = RED4ext::MakeHandle<CharacterSync>();
+    m_characterSync->OnInitialize();
 }
 
 void NetworkWorldSystem::Host()
@@ -497,6 +500,7 @@ void NetworkWorldSystem::OnConnected()
         });
 
     m_interpolationSystem->OnConnected();
+    m_characterSync->OnConnected();
 }
 
 void NetworkWorldSystem::OnDisconnected(Client::EDisconnectReason aReason)
@@ -523,6 +527,7 @@ void NetworkWorldSystem::OnDisconnected(Client::EDisconnectReason aReason)
 
     m_interpolationSystem->OnDisconnected();
     m_vehicleSystem->OnDisconnected();
+    m_characterSync->OnDisconnected();
 
     RED4ext::StackArgs_t args;
     auto reason = (uint32_t)aReason;

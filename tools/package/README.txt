@@ -2,8 +2,8 @@ Cyberpunk 2077 Seamless Co-op {VERSION}
 https://github.com/oxylol/cp2077-coop
 
 Story co-op: one player hosts from their own game, the others join with the same password. You see each
-other, in and out of cars, and the guests follow the host's time of day and weather. Every player needs their
-own copy of the game (2.31) and this mod.
+other walk, run, crouch, draw, aim, reload and fire weapons, and sit and drive in cars; the guests follow the
+host's time of day and weather. Every player needs their own copy of the game (2.31) and this mod.
 
 INSTALL (everyone)
   Extract the whole zip into the game folder: the folder with bin, engine and r6 in it, e.g.

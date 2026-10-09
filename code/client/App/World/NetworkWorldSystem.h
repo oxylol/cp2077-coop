@@ -6,6 +6,7 @@
 #include "Network/Client.h"
 #include "Red/TypeInfo/Macros/Definition.hpp"
 #include "AppearanceSystem.h"
+#include "CharacterSync.h"
 #include "InterpolationSystem.h"
 #include "VehicleSystem.h"
 
@@ -32,6 +33,7 @@ struct NetworkWorldSystem : RED4ext::IGameSystem, Core::HookingAgent, flecs::wor
     Red::Handle<AppearanceSystem> GetAppearanceSystem() const { return m_appearanceSystem; }
     Red::Handle<InterpolationSystem> GetInterpolationSystem() const { return m_interpolationSystem; }
     Red::Handle<VehicleSystem> GetVehicleSystem() const { return m_vehicleSystem; }
+    Red::Handle<CharacterSync> GetCharacterSync() const { return m_characterSync; }
 
     void Update(uint64_t aTick);
 
@@ -69,6 +71,7 @@ private:
     Red::Handle<InterpolationSystem> m_interpolationSystem;
     Red::Handle<AppearanceSystem> m_appearanceSystem;
     Red::Handle<VehicleSystem> m_vehicleSystem;
+    Red::Handle<CharacterSync> m_characterSync;
 };
 
 RTTI_DEFINE_CLASS(NetworkWorldSystem, { 
@@ -80,4 +83,5 @@ RTTI_DEFINE_CLASS(NetworkWorldSystem, {
     RTTI_METHOD(GetAppearanceSystem);
     RTTI_METHOD(GetInterpolationSystem);
     RTTI_METHOD(GetVehicleSystem);
+    RTTI_METHOD(GetCharacterSync);
 });

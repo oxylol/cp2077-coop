@@ -78,6 +78,22 @@ message NotifyWorldState {
     uint64 weather = 2;
 }
 
+// A character's stance and weapon, as its player sent them (client.CharacterStateRequest).
+message NotifyCharacterState {
+    uint64 id = 1;
+    uint32 locomotion = 2;
+    uint32 upper_body = 3;
+    uint32 weapon_state = 4;
+    uint64 weapon = 5;
+}
+
+// Shots from a character's weapon (client.CharacterShotRequest).
+message NotifyCharacterShot {
+    bool unreliable = 1000; // This is just a tag to indicate that this message is unreliable
+    uint64 id = 1;
+    uint32 count = 2;
+}
+
 message Protocol {
     oneof content {
         AuthenticationResponse authentication_response = 1;
@@ -92,5 +108,7 @@ message Protocol {
         NotifyPlayerJoined notify_player_joined = 13;
         NotifyPlayerLeft notify_player_left = 14;
         NotifyWorldState notify_world_state = 15;
+        NotifyCharacterState notify_character_state = 16;
+        NotifyCharacterShot notify_character_shot = 17;
     }
 }

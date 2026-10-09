@@ -7,6 +7,7 @@
 #include <Components/AttachmentComponent.h>
 #include "Components/CellComponent.h"
 #include <Components/CharacterComponent.h>
+#include <Components/CharacterStateComponent.h>
 #include <Components/VehicleComponent.h>
 
 #include "GameServer.h"
@@ -30,6 +31,8 @@ Level::Level(World* apWorld) noexcept
     GServer->RegisterHandler<&Level::HandleMoveEntityRequest>(this);
     GServer->RegisterHandler<&Level::HandleEnterVehicleRequest>(this);
     GServer->RegisterHandler<&Level::HandleExitVehicleRequest>(this);
+    GServer->RegisterHandler<&Level::HandleCharacterStateRequest>(this);
+    GServer->RegisterHandler<&Level::HandleCharacterShotRequest>(this);
 
     m_updateSystem = m_pWorld->system<const LevelActorTag>("Level Update")
         .each([this](flecs::entity aEntity, const LevelActorTag&)
@@ -81,12 +84,13 @@ void Level::Add(flecs::entity aEntity) noexcept
 
     flecs::entity owner = aEntity.parent();
 
-    GetWorld()->each([this, &load, owner](flecs::entity aEntity, const PlayerComponent& aPlayerComponent, const LevelSystemTag&)
+    GetWorld()->each([this, &load, owner, aEntity](flecs::entity aPlayer, const PlayerComponent& aPlayerComponent, const LevelSystemTag&)
     {
-        if (!IsDebug() && owner == aEntity)
+        if (!IsDebug() && owner == aPlayer)
             return;
 
         GServer->Send(aPlayerComponent.Connection, load);
+        SendState(aEntity, aPlayerComponent.Connection);
     });
 
     pCell->Add(aEntity);
@@ -153,6 +157,7 @@ void Level::AddPlayer(flecs::entity aEntity) noexcept
                 return;
 
             GServer->Send(pPlayerComponent->Connection, Serialize(aEntity));
+            SendState(aEntity, pPlayerComponent->Connection);
         });
 }
 
@@ -354,6 +359,57 @@ void Level::HandleExitVehicleRequest(PacketEvent<client::ExitVehicleRequest>& aM
 
     // Start interpolation again
     target.remove<AttachmentComponent>();
+}
+
+flecs::entity Level::GetOwned(uint64_t aId, ConnectionId aConnection, const char* aWhat) noexcept
+{
+    flecs::entity target(GetWorld()->get_world(), aId);
+    if (!aId || !target.is_alive())
+    {
+        spdlog::warn("{} for invalid entity {:x} from connection {:x}", aWhat, aId, aConnection);
+        return {};
+    }
+
+    const auto player = target.parent();
+    const auto* pPlayer = player ? player.get<PlayerComponent>() : nullptr;
+    if (!pPlayer || pPlayer->Connection != aConnection)
+    {
+        spdlog::warn("{} for entity {:x}, not owned by connection {:x}", aWhat, aId, aConnection);
+        return {};
+    }
+
+    return target;
+}
+
+void Level::SendState(flecs::entity aEntity, ConnectionId aConnection) noexcept
+{
+    if (const auto* pState = aEntity.get<CharacterStateComponent>())
+        GServer->Send(aConnection, pState->ToMessage(aEntity));
+}
+
+void Level::HandleCharacterStateRequest(PacketEvent<client::CharacterStateRequest>& aMessage) noexcept
+{
+    const auto target = GetOwned(aMessage.get_id(), aMessage.ConnectionId, "Character state");
+    if (!target)
+        return;
+
+    const CharacterStateComponent state{aMessage.get_locomotion(), aMessage.get_upper_body(), aMessage.get_weapon_state(),
+                                        aMessage.get_weapon()};
+    target.set(state);
+    GServer->SendToPlayers(state.ToMessage(target), IsDebug() ? 0 : aMessage.ConnectionId);
+}
+
+void Level::HandleCharacterShotRequest(PacketEvent<client::CharacterShotRequest>& aMessage) noexcept
+{
+    const auto target = GetOwned(aMessage.get_id(), aMessage.ConnectionId, "Shots");
+    if (!target || aMessage.get_count() == 0)
+        return;
+
+    server::NotifyCharacterShot shot;
+    shot.set_id(target);
+    // A burst at most: shots are effects here, not damage, and a broken or hostile client shouldn't flood the others.
+    shot.set_count(std::min<uint32_t>(aMessage.get_count(), 30));
+    GServer->SendToPlayers(shot, IsDebug() ? 0 : aMessage.ConnectionId);
 }
 
 server::NotifyCharacterLoad Level::Serialize(flecs::entity aEntity) noexcept
