@@ -50,7 +50,10 @@ jobs:
     - name: Setup dotnet
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 9
+        # 10: CppSharp's Linux build is for .NET 10 only, so SdkGenerator targets it on Linux.
+        dotnet-version: |
+          9.0.x
+          10.0.x
 
     # Setup compilation mode and install project dependencies
     - name: 'Configure xmake and install dependencies'

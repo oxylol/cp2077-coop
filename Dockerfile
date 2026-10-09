@@ -9,6 +9,7 @@ RUN apt update \
   && apt install -y xmake g++ unzip wget ca-certificates git \
   && wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh \
   && bash /tmp/dotnet-install.sh --channel 8.0 --runtime dotnet --install-dir /usr/share/dotnet \
+  && bash /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet \
   && rm /tmp/dotnet-install.sh \
   && apt clean
 

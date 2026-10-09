@@ -16,7 +16,10 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-latest]
+        # windows-latest moved to an image with Visual Studio 2026, which xmake 2.9.6 doesn't find, and
+        # windows-2025 only has Windows SDK 10.0.26100 (too new for this build). windows-2022 has
+        # VS 2022 and SDK 10.0.19041.
+        os: [windows-2022]
         arch: [x64]
         mode: [releasedbg]
 
