@@ -128,7 +128,7 @@ $pdb = [System.IO.Path]::ChangeExtension($Dll, ".pdb")
 if (Test-Path $pdb) {
     Copy-Item $pdb $plugin
 } else {
-    Write-Host "No $pdb: crash reports will only have offsets." -ForegroundColor Yellow
+    Write-Host "No ${pdb}: crash reports will only have offsets." -ForegroundColor Yellow
 }
 Copy-Item (Join-Path $Root "code/assets/coop.ini") $plugin
 Copy-Item (Join-Path $Root "LICENSE.md") $plugin

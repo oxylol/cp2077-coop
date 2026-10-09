@@ -29,6 +29,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # The PowerShell scripts (release zip, environment check, local test) parse; the runner has pwsh.
+    - name: 'Check PowerShell scripts'
+      run: pwsh -NoProfile -File tools/check/check-scripts.ps1
+
     - name: 'Update apt repositories'
       run: sudo apt-get update
 
