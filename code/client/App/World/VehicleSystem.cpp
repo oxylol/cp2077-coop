@@ -203,6 +203,11 @@ void VehicleSystem::Ready(flecs::entity aVehicle, Red::EntityID aGameId)
     aVehicle.emplace<EntityComponent>(aGameId, true, nullptr);
 }
 
+void VehicleSystem::Log(const Red::CString& acText)
+{
+    spdlog::info("[VehicleSystem.reds] {}", acText.c_str());
+}
+
 void VehicleSystem::OnVehicleReady(const Red::EntityID& aVehicleEntityId)
 {
     spdlog::info("[VehicleSystem] OnVehicleReady");

@@ -28,6 +28,7 @@ protected:
     void OnVehicleEnter(Red::EntityID aVehicle, const Red::TweakDBID& aVehicleTdbid, Red::CName aName, const Red::Vector4& aPostion, const Red::Quaternion& aOrientation);
     void OnVehicleExit();
     void OnVehicleReady(const Red::EntityID& vehicle);
+    void Log(const Red::CString& acText);
 
     bool HandleVehicleLoadMessage(const PacketEvent<server::NotifyVehicleLoad>& aMessage);
     bool HandleVehicleEnterMessage(const PacketEvent<server::NotifyVehicleEnter>& aMessage);
@@ -61,4 +62,5 @@ RTTI_DEFINE_CLASS(VehicleSystem, {
     RTTI_METHOD(OnVehicleEnter);
     RTTI_METHOD(OnVehicleExit);
     RTTI_METHOD(OnVehicleReady);
+    RTTI_METHOD(Log);
 });

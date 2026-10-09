@@ -8,6 +8,8 @@ public native class VehicleSystem extends IScriptable {
     public native func OnVehicleEnter(entityID: EntityID, type: TweakDBID, sit_position: CName, vehicle_location: Vector4, vehicle_rotation: Quaternion) -> Void;
     public native func OnVehicleExit() -> Void;
     public native func OnVehicleReady(entityID: EntityID) -> Void;
+    // A line in the mod's log (CyberpunkCoop.log).
+    public native func Log(text: String) -> Void;
 
     public func OnWorldAttached() -> Void {
         let callbackSystem = GameInstance.GetCallbackSystem();
@@ -61,6 +63,7 @@ public native class VehicleSystem extends IScriptable {
             return false;
         }
 
+        this.Log("seating: mount " + NameToString(sit_position));
         let info: MountingInfo;
         info.parentId = vehicle_id;
         info.childId = character_id;
@@ -81,15 +84,19 @@ public native class VehicleSystem extends IScriptable {
         request.mountData = data;
         GameInstance.GetMountingFacility(game).Mount(request);
 
+        this.Log("seating: clear weapon, animset");
         CoopClearForVehicle(character);
         let animVariables = VehicleComponent.SetAnimsetOverrideForPassenger(character, vehicle_id, sit_position, 1.0);
         let workspots = GameInstance.GetWorkspotSystem(game);
         let synchronized: array<EntityID>;
+        this.Log("seating: workspot");
         workspots.StopNpcInWorkspot(character);
         let seated = workspots.MountToVehicle(vehicle, character, 0.0, 0.0, n"OccupantSlots", sit_position, synchronized, n"default", animVariables);
 
         // In the vehicle stance, as NPCs ride (NPCStatesComponent): its animations are the seat's, driving or riding.
+        this.Log("seating: stance");
         this.ApplyVehicleStance(character, true);
+        this.Log("seating: done");
         return seated;
     }
 
@@ -137,6 +144,18 @@ public native class VehicleSystem extends IScriptable {
             request.lowLevelMountingInfo = info;
             request.mountData = data;
             mounting.Unmount(request);
+        }
+
+        // Telling the car the seat empties also reserves it while the character gets out (vehicleComponentPS.script
+        // OnVehicleStartedUnmountingEvent), until the unmount releases it. The game's exits get out with an animation
+        // in between; this one is instant, so the release came first and the seat stayed reserved: getting back into
+        // it crashed the game. Released again once the reservation is through.
+        if IsDefined(vehicle) {
+            let release = new VehicleSeatReservationEvent();
+            release.slotID = info.slotId.id;
+            release.reserve = false;
+            let ps = vehicle.GetVehiclePS();
+            GameInstance.GetDelaySystem(game).DelayPSEvent(ps.GetID(), ps.GetClassName(), release, 1.0);
         }
         this.ApplyVehicleStance(character, false);
 
