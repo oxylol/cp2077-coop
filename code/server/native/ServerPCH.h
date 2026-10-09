@@ -27,16 +27,9 @@
 #undef check
 
 #include <spdlog/spdlog.h>
-#include <spdlog/sinks/rotating_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <Network/Server.h>
 #include <steam/isteamnetworkingutils.h>
-
-#include <nlohmann/json.hpp>
-
-#define CPPHTTPLIB_OPENSSL_SUPPORT
-#include <httplib.h>
 
 #include <client.gen.h>
 #include <server.gen.h>

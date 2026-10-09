@@ -70,19 +70,10 @@ void Core::Application::Shutdown()
 void Core::Application::Load(RED4ext::CGameApplication* apApp)
 {
     Settings::Load();
-
-    if (Settings::IsDisabled())
-    {
-        m_sdk->logger->Warn(m_plugin, "CyberpunkMP is disabled: \"--online\" flag is missing.");
-    }
 }
 
 void Core::Application::Update(RED4ext::CGameApplication* apApp) const
 {
-    if (Settings::IsDisabled())
-    {
-        return;
-    }
     for (const auto& feature : GetRegistered())
     {
         feature->OnGameUpdate(apApp);

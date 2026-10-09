@@ -6,9 +6,12 @@ import "common.proto";
 
 message AuthenticationRequest {
     string username = 1;
-    string token = 2;
+    // Set only by the host's own game: the token the embedded session generated, which makes this player the host.
+    string host_token = 2;
     uint64 client_protocol = 3;
     uint64 server_protocol = 4;
+    // The session password (coop.ini); checked by the host.
+    string password = 5;
 }
 
 message SpawnCharacterRequest {
@@ -43,13 +46,10 @@ message ExitVehicleRequest {
     uint64 id = 1;
 }
 
-message ChatMessageRequest {
-    string message = 1;
-}
-
-message RpcCall {
-    uint32 id = 1;
-	bytes arguments = 2;
+// Sent by the host every few seconds: its time of day and weather, for the guests to follow.
+message ReportWorldState {
+    uint32 game_time = 1; // seconds of game time
+    uint64 weather = 2;   // the weather state's name (CName hash), 0 when unknown
 }
 
 message Protocol {
@@ -57,9 +57,8 @@ message Protocol {
         AuthenticationRequest authentication_request = 1;
         SpawnCharacterRequest spawn_character_request = 2;
         MoveEntityRequest move_entity_request = 3;
-        ChatMessageRequest chat_message_request = 4;
-        RpcCall rpc_call = 5;
         EnterVehicleRequest enter_vehicle_request = 6;
         ExitVehicleRequest exit_vehicle_request = 7;
+        ReportWorldState report_world_state = 8;
     }
 }

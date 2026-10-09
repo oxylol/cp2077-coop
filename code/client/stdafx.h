@@ -32,7 +32,6 @@
 
 #include <gsl/gsl>
 
-#include <imgui.h>
 #include <mem/mem.h>
 #include <mem/module.h>
 #include <mem/pattern.h>

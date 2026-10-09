@@ -2,14 +2,15 @@ module CyberpunkMP.World
 
 import Codeware.*
 import CyberpunkMP.*
-import CyberpunkMP.Plugins.*
 
 public native class NetworkWorldSystem extends IGameSystem {
-    public native func Connect() -> Void;
-    public native func Disconnect() -> Void;
+    // Co-op session (C++: code/client/App/World/NetworkWorldSystem.cpp). Host runs the session in this game and
+    // joins it; Join connects to a host; Leave ends either.
+    public native func Host() -> Void;
+    public native func Join() -> Void;
+    public native func Leave() -> Void;
     public native func GetEntityIdByServerId(serverId: Uint64) -> EntityID;
     public native func GetAppearanceSystem() -> ref<AppearanceSystem>;
-    public native func GetChatSystem() -> ref<ChatSystem>;
     public native func GetInterpolationSystem() -> ref<InterpolationSystem>;
     public native func GetVehicleSystem() -> ref<VehicleSystem>;
 
@@ -24,8 +25,6 @@ public native class NetworkWorldSystem extends IGameSystem {
     }
 
     public func OnDisconnected(reason: Uint32) -> Void {
-        CoopSession.Get().OnDisconnected();
-
         // let evt: ref<ConnectedToServer>;
         // evt.m_connected = true;
         // GameInstance.GetUISystem(GetGameInstance()).QueueEvent(evt);
@@ -33,6 +32,17 @@ public native class NetworkWorldSystem extends IGameSystem {
         let blackboardSystem: ref<BlackboardSystem> = GameInstance.GetBlackboardSystem(GetGameInstance());
         let blackboard: ref<IBlackboard> = blackboardSystem.Get(GetAllBlackboardDefs().UIGameData);
         blackboard.SetBool(GetAllBlackboardDefs().UIGameData.UIMultiplayerConnectedToServer, false, true);
+    }
+
+    // A line of text in the middle of the screen (the game's own on-screen message), e.g. "Guest joined".
+    public func ShowMessage(text: String) -> Void {
+        let message: SimpleScreenMessage;
+        message.isShown = true;
+        message.duration = 5.0;
+        message.message = text;
+        message.isInstant = true;
+        let blackboard = GameInstance.GetBlackboardSystem(GetGameInstance()).Get(GetAllBlackboardDefs().UI_Notifications);
+        blackboard.SetVariant(GetAllBlackboardDefs().UI_Notifications.OnscreenMessage, ToVariant(message), true);
     }
 
     public func CreatePuppet(position: Vector4, rotation: Quaternion, isMale: Bool) -> EntityID {

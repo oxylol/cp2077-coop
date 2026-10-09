@@ -5,14 +5,12 @@
 
 PlayerManager::PlayerManager(gsl::not_null<World*> apWorld)
     : m_pWorld(apWorld)
-    , m_scriptInstance(this)
 {
 }
 
 PlayerManager::PlayerManager(PlayerManager&& aManager)
     : m_pWorld(aManager.m_pWorld)
     , m_players(std::exchange(aManager.m_players, {}))
-    , m_scriptInstance(this)
 {
 }
 
@@ -24,14 +22,14 @@ PlayerManager& PlayerManager::operator=(PlayerManager&& aManager)
     return *this;
 }
 
-flecs::entity PlayerManager::Create(ConnectionId aConnectionId, String aUsername) noexcept
+flecs::entity PlayerManager::Create(ConnectionId aConnectionId, String aUsername, bool aIsHost) noexcept
 {
     const auto itor = m_players.find(aConnectionId);
     if (itor == std::end(m_players))
     {
         auto entity = GetWorld()->entity(fmt::format("Player {:x}", aConnectionId).c_str())
             .child_of(GetWorld()->entity("Level"))
-            .emplace<PlayerComponent>(aConnectionId, flecs::entity{}, aUsername.c_str());
+            .emplace<PlayerComponent>(aConnectionId, flecs::entity{}, aUsername.c_str(), aIsHost);
 
         const auto [insertedItor, inserted] = m_players.emplace(aConnectionId, entity);
         if (inserted)
@@ -60,14 +58,15 @@ flecs::entity PlayerManager::GetByConnectionId(ConnectionId aConnectionId) const
     return {};
 }
 
-gsl::not_null<const PlayerManagerScriptInstance*> PlayerManager::GetScriptInstance() const noexcept
+flecs::entity PlayerManager::GetHost() const noexcept
 {
-    return &m_scriptInstance;
-}
+    for (const auto& [connection, player] : m_players)
+    {
+        if (const auto* pPlayer = player.get<PlayerComponent>(); pPlayer && pPlayer->IsHost)
+            return player;
+    }
 
-gsl::not_null<PlayerManagerScriptInstance*> PlayerManager::GetScriptInstance() noexcept
-{
-    return &m_scriptInstance;
+    return {};
 }
 
 void PlayerManager::SendMessageTo(flecs::entity aPlayer, String aMessage) const noexcept

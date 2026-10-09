@@ -1,11 +1,14 @@
 name: Build linux
 
+# The co-op session (code/server/native) is plain C++: it's built and tested here too. The mod itself is
+# Windows-only (build windows).
 on:
   pull_request:
   push:
     branches:
       - main
       - dev
+      - 'claude/**'
   # Weekly, so changes outside the repository (runner images, xmake, package recipes) show up before a push
   # does; GitHub mails the failure. Also runnable by hand from the Actions tab.
   schedule:
@@ -18,7 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04]
         arch: [x64]
-        mode: [release]
+        mode: [releasedbg]
 
     runs-on: ${{ matrix.os }}
     if: "!contains(github.event.head_commit.message, 'ci skip')"
@@ -26,21 +29,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: 'Checkout submodules'
-      run: |
-        git config --global url."https://github.com/".insteadOf "git@github.com:"
-        git submodule sync --recursive
-        git submodule update --init --force --recursive --depth=1
-
-    # Install dependencies
     - name: 'Update apt repositories'
       run: sudo apt-get update
-
-    # Install pnpm for better disk/cache performance
-    - name: Install pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 9
 
     # Install xmake
     - name: 'Setup xmake'
@@ -52,23 +42,15 @@ jobs:
     - name: 'Update xmake repository'
       run: xmake repo --update
 
-    - name: Setup dotnet
-      uses: actions/setup-dotnet@v4
-      with:
-        # 10: CppSharp's Linux build is for .NET 10 only, so SdkGenerator targets it on Linux.
-        dotnet-version: |
-          9.0.x
-          10.0.x
-
-    # Setup compilation mode and install project dependencies
     - name: 'Configure xmake and install dependencies'
-      continue-on-error: true
       run: timeout 30m xmake config --arch=${{ matrix.arch }} --mode=${{ matrix.mode }} --yes
 
     # One version of each library, no installed library built against other versions (tools/check/check_deps.lua)
     - name: 'Check resolved packages'
       run: xmake check-deps
 
-    # Build the server
     - name: Build
-      run: xmake -y
+      run: xmake build -y Session.Tests
+
+    - name: 'Session tests'
+      run: xmake run Session.Tests

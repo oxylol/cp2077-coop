@@ -2,8 +2,6 @@ module CyberpunkMP.World
 
 import Codeware.*
 import CyberpunkMP.*
-import CyberpunkMP.Ink.*
-import CyberpunkMP.Plugins.*
 
 public native class AppearanceSystem extends IScriptable {
     public native func GetEntityItems(entityID: EntityID) -> array<TweakDBID>;
@@ -12,9 +10,6 @@ public native class AppearanceSystem extends IScriptable {
 
     private let m_callbackSystem: wref<CallbackSystem>;
     public let m_entities: array<wref<GameObject>>;
-    public let m_controller: wref<MultiplayerGameController>;
-    public let m_deliveryEntries: array<ref<JobEntry>>;
-    public let m_mappin: NewMappinID;
 
     public func OnWorldAttached() -> Void {
         this.m_callbackSystem = GameInstance.GetCallbackSystem();

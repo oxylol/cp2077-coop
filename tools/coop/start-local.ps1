@@ -1,38 +1,20 @@
-# Starts a local server and two games that connect to it, to test co-op on one PC.
+# Starts two copies of the game on this PC to try co-op: one as "Host", one as "Guest".
 #
 #   powershell -ExecutionPolicy Bypass -File tools\coop\start-local.ps1 -Game "D:\Games\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe"
 #
-# Build first (see README.md): xmake build Server.Loader, and xmake build Cyberpunk2077 (which links the mod into
-# the game). Each game starts with --online and its own --name; load a save in each, then hold "/" to connect.
+# Needs the mod in that game (the release zip, or `xmake build Cyberpunk2077` for a dev build). Both games read the
+# same coop.ini (same password, join_address 127.0.0.1:11778 by default); --name tells them apart.
+# In the first game load a save and hold "/" to host; in the second load a save and hold "." to join.
 param(
     [string]$Game = "C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe",
-    [ValidateSet("debug", "releasedbg", "release")]
-    [string]$Mode = "releasedbg",
-    [int]$Port = 11778,
     [string[]]$Names = @("Host", "Guest"),
-    [int]$DelayBetweenGames = 25,
-    [switch]$NoServer
+    [int]$DelayBetweenGames = 25
 )
 
 $ErrorActionPreference = "Stop"
-$root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$build = Join-Path $root "build\windows\x64\$Mode"
 
 if (!(Test-Path $Game)) {
     throw "Cyberpunk2077.exe not found at '$Game'. Pass -Game with its full path."
-}
-
-if (-not $NoServer) {
-    $server = Join-Path $build "Server.Loader.exe"
-    if (!(Test-Path $server)) {
-        throw "No server at '$server'. Build it first (README.md): xmake f -c -m $Mode --vs_sdkver=10.0.22621.0 -y; xmake build Server.Loader"
-    }
-    # Release servers refuse to start without admin credentials for their web API; local test values.
-    $env:CYBERPUNKMP_ADMIN_USERNAME = "admin"
-    $env:CYBERPUNKMP_ADMIN_PASSWORD = [guid]::NewGuid().ToString()
-    Write-Host "Starting the server ($server)"
-    Start-Process -FilePath $server -WorkingDirectory $build
-    Start-Sleep -Seconds 3
 }
 
 $first = $true
@@ -44,11 +26,9 @@ foreach ($name in $Names) {
     }
     $first = $false
     Write-Host "Starting the game as '$name'"
-    Start-Process -FilePath $Game -WorkingDirectory (Split-Path $Game) `
-        -ArgumentList "--online", "--ip=127.0.0.1", "--port=$Port", "--name=$name", "--skipStartMenu"
+    Start-Process -FilePath $Game -WorkingDirectory (Split-Path $Game) -ArgumentList "--name=$name", "--skipStartMenu"
 }
 
 Write-Host ""
-Write-Host "In each game: load a save, then hold '/' to connect. The first to connect is the story host."
-Write-Host "Chat: ';' to type, '/help' for the co-op commands. Logs: <game>\red4ext\logs and the server window."
-Write-Host "Don't save in both games at once: they share the same save folder."
+Write-Host "In '$($Names[0])': load a save, hold '/' to host. In '$($Names[1])': load a save, hold '.' to join."
+Write-Host "Logs: <game>\red4ext\logs. Don't save in both games at once: they share the same save folder."

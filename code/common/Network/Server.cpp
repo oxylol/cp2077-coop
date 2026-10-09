@@ -1,6 +1,8 @@
 #include "Server.h"
 #include "SteamInterface.h"
 #include <thread>
+#include <mutex>
+#include <unordered_set>
 #include <algorithm>
 #include <Core/Buffer.h>
 #include <Core/StackAllocator.h>
@@ -15,6 +17,13 @@ using namespace std::chrono;
 
 static thread_local Server* s_pServer = nullptr;
 
+// Client and Server share one ISteamNetworkingSockets, and its RunCallbacks() runs every queued connection-status
+// callback, whichever of them calls it: the host's game runs both. So each connection carries its owner in its user
+// data (set when it's created, or on the listen socket, which accepted connections inherit), and the owner is only
+// called while it's alive.
+static std::mutex s_liveServersLock;
+static std::unordered_set<const Server*> s_liveServers;
+
 Server::Server(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     : m_tickRate(10)
     , m_lastUpdateTime(0ns)
@@ -27,10 +36,18 @@ Server::Server(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     m_pInterface = SteamNetworkingSockets();
     m_listenSock = k_HSteamListenSocket_Invalid;
     m_pollGroup = k_HSteamNetPollGroup_Invalid;
+
+    std::scoped_lock _(s_liveServersLock);
+    s_liveServers.insert(this);
 }
 
 Server::~Server()
 {
+    {
+        std::scoped_lock _(s_liveServersLock);
+        s_liveServers.erase(this);
+    }
+
     Close();
 
     SteamInterface::Release();
@@ -51,9 +68,10 @@ bool Server::Host(const uint16_t aPort, uint32_t aTickRate, bool bEnableDualStac
         localAddress.SetIPv4(0, aPort);
     }
 
-    SteamNetworkingConfigValue_t opt = {};
-    opt.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback));
-    m_listenSock = m_pInterface->CreateListenSocketIP(localAddress, 1, &opt);
+    SteamNetworkingConfigValue_t options[2] = {};
+    options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback));
+    options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, reinterpret_cast<int64_t>(this));
+    m_listenSock = m_pInterface->CreateListenSocketIP(localAddress, 2, options);
 
     m_pollGroup = m_pInterface->CreatePollGroup();
 
@@ -74,8 +92,20 @@ bool Server::Host(const uint16_t aPort, uint32_t aTickRate, bool bEnableDualStac
     return IsListening();
 }
 
+void Server::CloseConnections(const char* acReason) noexcept
+{
+    for (const auto connection : m_connections)
+        m_pInterface->CloseConnection(connection, k_ESteamNetConnectionEnd_App_Min, acReason, false);
+    for (const auto connection : m_queuedConnections)
+        m_pInterface->CloseConnection(connection, k_ESteamNetConnectionEnd_App_Min, acReason, false);
+    m_connections.clear();
+    m_queuedConnections.clear();
+}
+
 void Server::Close() noexcept
 {
+    CloseConnections("Server closed");
+
     m_pInterface->DestroyPollGroup(m_pollGroup);
     
     if (IsListening())
@@ -122,15 +152,18 @@ void Server::Update() noexcept
 
     OnUpdate();
 
-    const auto cFrameTime = m_currentTick - m_lastUpdateTime;
-    const auto cSleepTime = m_timeBetweenUpdates - cFrameTime;
+    if (m_blocking)
+    {
+        const auto cFrameTime = m_currentTick - m_lastUpdateTime;
+        const auto cSleepTime = m_timeBetweenUpdates - cFrameTime;
 
-    if (cSleepTime > 0ns)
-        std::this_thread::sleep_for(cSleepTime);
+        if (cSleepTime > 0ns)
+            std::this_thread::sleep_for(cSleepTime);
 
-    // If no client is connected, sleep
-    if (m_queuedConnections.empty() && m_connections.empty())
-        std::this_thread::sleep_for(200ms);
+        // If no client is connected, sleep
+        if (m_queuedConnections.empty() && m_connections.empty())
+            std::this_thread::sleep_for(200ms);
+    }
 
     m_lastUpdateTime = m_currentTick;
 }
@@ -337,9 +370,19 @@ void Server::SteamNetConnectionStatusChangedCallback(SteamNetConnectionStatusCha
     if (!apInfo || apInfo->m_hConn == k_HSteamNetConnection_Invalid) [[unlikely]]
         return;
 
-    if (s_pServer)
+    Server* pServer = s_pServer; // a connection without an owner (user data -1): the server running callbacks
+    if (apInfo->m_info.m_nUserData != -1)
     {
-        s_pServer->OnSteamNetConnectionStatusChanged(apInfo);
+        pServer = reinterpret_cast<Server*>(apInfo->m_info.m_nUserData);
+
+        std::scoped_lock _(s_liveServersLock);
+        if (!s_liveServers.contains(pServer))
+            pServer = nullptr;
+    }
+
+    if (pServer)
+    {
+        pServer->OnSteamNetConnectionStatusChanged(apInfo);
     }
 }
 

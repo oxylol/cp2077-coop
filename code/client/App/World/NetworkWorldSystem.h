@@ -6,7 +6,6 @@
 #include "Network/Client.h"
 #include "Red/TypeInfo/Macros/Definition.hpp"
 #include "AppearanceSystem.h"
-#include "ChatSystem.h"
 #include "InterpolationSystem.h"
 #include "VehicleSystem.h"
 
@@ -31,7 +30,6 @@ struct NetworkWorldSystem : RED4ext::IGameSystem, Core::HookingAgent, flecs::wor
     std::optional<uint64_t> GetRemotePlayerId() const { return m_remotePlayerId; }
 
     Red::Handle<AppearanceSystem> GetAppearanceSystem() const { return m_appearanceSystem; }
-    Red::Handle<ChatSystem> GetChatSystem() const { return m_chatSystem; }
     Red::Handle<InterpolationSystem> GetInterpolationSystem() const { return m_interpolationSystem; }
     Red::Handle<VehicleSystem> GetVehicleSystem() const { return m_vehicleSystem; }
 
@@ -39,8 +37,13 @@ struct NetworkWorldSystem : RED4ext::IGameSystem, Core::HookingAgent, flecs::wor
 
     void OnInitialize(const RED4ext::JobHandle& aJob) override;
 
-    void Connect();
-    void Disconnect();
+    // The co-op session, for the HUD's hold actions (NetworkService does the work).
+    void Host();
+    void Join();
+    void Leave();
+    // A line in the middle of the screen (redscript ShowMessage).
+    void ShowMessage(const std::string& acText);
+
     void OnConnected();
     void OnDisconnected(Client::EDisconnectReason);
 
@@ -65,17 +68,16 @@ private:
     flecs::system m_updateSpawningEntities;
     Red::Handle<InterpolationSystem> m_interpolationSystem;
     Red::Handle<AppearanceSystem> m_appearanceSystem;
-    Red::Handle<ChatSystem> m_chatSystem;
     Red::Handle<VehicleSystem> m_vehicleSystem;
 };
 
 RTTI_DEFINE_CLASS(NetworkWorldSystem, { 
     RTTI_ALIAS("CyberpunkMP.World.NetworkWorldSystem");
-    RTTI_METHOD(Connect);
-    RTTI_METHOD(Disconnect);
+    RTTI_METHOD(Host);
+    RTTI_METHOD(Join);
+    RTTI_METHOD(Leave);
     RTTI_METHOD(GetEntityIdByServerId);
     RTTI_METHOD(GetAppearanceSystem);
     RTTI_METHOD(GetInterpolationSystem);
-    RTTI_METHOD(GetChatSystem);
     RTTI_METHOD(GetVehicleSystem);
 });

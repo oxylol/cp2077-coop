@@ -1,5 +1,5 @@
 # Checks this PC can build cp2077-coop, before a long build fails halfway through. Run it before building, and
-# after `xmake f` run `xmake check-deps` (the packages it resolved).
+# after `xmake f` run `xmake check-deps` (the packages it resolved). Playing needs none of this: see README.md.
 #
 #   powershell -ExecutionPolicy Bypass -File tools\check\check-env.ps1
 #
@@ -127,43 +127,6 @@ if ($onWindows) {
     }
 }
 
-# .NET: the SDK generator runs on .NET 9 (.NET 10 on Linux, where CppSharp ships only a .NET 10 build), the server
-# and its plugins on .NET 8.
-$sdkList = Run "dotnet" @("--list-sdks")
-$runtimeList = Run "dotnet" @("--list-runtimes")
-if ($null -eq $sdkList) {
-    Fail ".NET not found. Install the .NET 9 SDK and the .NET 8 runtime: https://dotnet.microsoft.com/download"
-} else {
-    $generator = 9
-    if (-not $onWindows) { $generator = 10 }
-    $sdkMajors = @([regex]::Matches($sdkList, '(?m)^(\d+)\.') | ForEach-Object { [int]$_.Groups[1].Value })
-    if (-not ($sdkMajors | Where-Object { $_ -ge $generator })) {
-        Fail ".NET SDK $generator or newer not found (installed: $(($sdkMajors | Sort-Object -Unique) -join ', ')). https://dotnet.microsoft.com/download/dotnet/$generator.0"
-    } else {
-        Ok ".NET SDK $(($sdkMajors | Sort-Object -Unique)[-1])"
-    }
-    foreach ($runtime in @($generator, 8)) {
-        if ($runtimeList -notmatch "(?m)^Microsoft\.NETCore\.App $runtime\.") {
-            $what = "the server runs on it"
-            if ($runtime -eq $generator) { $what = "the C# SDK generator runs on it" }
-            Fail ".NET $runtime runtime not found ($what). https://dotnet.microsoft.com/download/dotnet/$runtime.0"
-        } else {
-            Ok ".NET $runtime runtime"
-        }
-    }
-}
-
-# pnpm only matters for the admin panel and the launcher (not built by `xmake build Server.Loader` or
-# `xmake build Cyberpunk2077`). pnpm 10+ refuses dependencies' build scripts (esbuild): ERR_PNPM_IGNORED_BUILDS.
-$pnpmVersion = Run "pnpm" @("--version")
-if ($pnpmVersion -and $pnpmVersion.Trim() -match '^(\d+)\.') {
-    if ([int]$Matches[1] -ge 10) {
-        Warn "pnpm $($pnpmVersion.Trim()): building the admin panel or the launcher may stop with ERR_PNPM_IGNORED_BUILDS (they're built with pnpm 9). The server and the game mod don't need pnpm."
-    } else {
-        Ok "pnpm $($pnpmVersion.Trim())"
-    }
-}
-
 # The saved xmake configuration, if there is one yet.
 $conf = Get-ChildItem (Join-Path $Root ".xmake") -Recurse -Filter "xmake.conf" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($conf) {
@@ -185,13 +148,13 @@ if ($conf) {
         Warn "The configured game ($game) doesn't exist; xmake build Cyberpunk2077 links the mod into it. Reconfigure with --game=<path to Cyberpunk2077.exe>."
     }
 
-    # Plugins left in the build folder by a plugin that no longer exists (e.g. EmoteSystem): the server still
-    # loads them.
-    $scripting = Join-Path $Root "code/server/scripting"
-    foreach ($plugins in Get-Item (Join-Path $Root "build/*/*/*/plugins") -ErrorAction SilentlyContinue) {
-        foreach ($plugin in Get-ChildItem $plugins.FullName -Directory) {
-            if (-not (Test-Path (Join-Path $scripting $plugin.Name))) {
-                Warn "Leftover plugin $($plugin.FullName): its source is gone, but the server would load it. Delete that folder."
+    # An older CyberpunkMP in the game would load next to this mod.
+    if ($game -and (Test-Path $game)) {
+        $plugins = Join-Path (Split-Path (Split-Path (Split-Path $game))) "red4ext/plugins"
+        foreach ($old in @("zzzCyberpunkMP", "CyberpunkMP")) {
+            $oldPath = Join-Path $plugins $old
+            if (Test-Path $oldPath) {
+                Fail "An older CyberpunkMP is installed in the game ($oldPath): it would load next to this mod. Delete that folder."
             }
         }
     }

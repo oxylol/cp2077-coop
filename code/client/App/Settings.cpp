@@ -1,72 +1,117 @@
 #include "Settings.h"
 #include <RED4ext/LaunchParameters.hpp>
 
+#include <fstream>
+#include <map>
+#include <optional>
+
+extern std::filesystem::path GCyberpunkMpLocation;
+
+namespace
+{
+constexpr auto kDefaultIni = R"(; Cyberpunk 2077 co-op. Edit, save, and restart the game.
+;
+; In the game: hold "/" to host a session, hold "." to join one. In a session, hold "/" to leave it.
+
+[coop]
+; Your name, shown to the other players.
+name = V
+
+; The host and every guest need the same password.
+password = changeme
+
+; Where "Join" connects: the host's IP address and port. On the same PC: 127.0.0.1:11778.
+join_address = 127.0.0.1:11778
+
+; The port this game hosts on. If it's taken (another game on this PC), the next one is used.
+port = 11778
+
+; Players in a session you host, you included.
+max_players = 4
+)";
+
+std::string Trim(std::string aText)
+{
+    const auto first = aText.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+        return {};
+    const auto last = aText.find_last_not_of(" \t\r\n");
+    return aText.substr(first, last - first + 1);
+}
+
+// key = value lines; ";" or "#" start a comment line; [sections] are ignored.
+std::map<std::string, std::string> ReadIni(const fs::path& acPath)
+{
+    std::map<std::string, std::string> values;
+    std::ifstream file(acPath);
+    std::string line;
+    while (std::getline(file, line))
+    {
+        line = Trim(line);
+        if (line.empty() || line[0] == ';' || line[0] == '#' || line[0] == '[')
+            continue;
+        const auto equals = line.find('=');
+        if (equals == std::string::npos)
+            continue;
+        auto key = Trim(line.substr(0, equals));
+        std::ranges::transform(key, key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        values[key] = Trim(line.substr(equals + 1));
+    }
+    return values;
+}
+
+std::optional<std::string> LaunchArgument(const char* acName)
+{
+    // The game's parser only fills these in for the --name=value form.
+    const auto values = RED4ext::GetLaunchParameters().Get(acName);
+    if (values && values->size > 0)
+        return std::string((*values)[0].c_str());
+    return std::nullopt;
+}
+
+uint16_t ToPort(const std::string& acText, uint16_t aDefault)
+{
+    const auto value = std::strtoul(acText.c_str(), nullptr, 10);
+    return value > 0 && value <= 0xFFFF ? static_cast<uint16_t>(value) : aDefault;
+}
+} // namespace
+
 void Settings::Load()
 {
     Settings& settings = Get();
+    settings.iniPath = GCyberpunkMpLocation / "coop.ini";
 
-    auto& launchParameters = RED4ext::GetLaunchParameters();
-
-    if (launchParameters.Contains(RED4ext::CString("-online")))
-        settings.enabled = true;
-
-    bool ipFromArgs = false;
-    bool portFromArgs = false;
-
-    if (const auto ip = launchParameters.Get("-ip"); ip)
+    std::error_code error;
+    if (!fs::exists(settings.iniPath, error))
     {
-        if (ip->size > 0)
-        {
-            settings.ip = (*ip)[0].c_str();
-            ipFromArgs = true;
-        }
+        std::ofstream file(settings.iniPath);
+        file << kDefaultIni;
+        spdlog::info("Created {}", settings.iniPath.string());
     }
 
-    if (const auto port = launchParameters.Get("-port"); port)
-    {
-        if (port->size > 0)
-        {
-            settings.port = std::strtoul((*port)[0].c_str(), nullptr, 10) & 0xFFFF;
-            portFromArgs = true;
-        }
-    }
+    auto values = ReadIni(settings.iniPath);
+    const auto value = [&](const char* acKey, const char* acArgument) -> std::optional<std::string> {
+        if (auto argument = LaunchArgument(acArgument))
+            return argument;
+        if (const auto it = values.find(acKey); it != values.end())
+            return it->second;
+        return std::nullopt;
+    };
 
-    // Report what we actually parsed. The game's parser only fills these in for the
-    // --ip=<addr> / --port=<n> form; "-ip <addr>" produces an empty value list and
-    // silently leaves the defaults in place, which looks identical to a dead server.
-    spdlog::info("Server address: {}:{} (ip {}, port {})", settings.ip, settings.port,
-                 ipFromArgs ? "from launch args" : "DEFAULT - --ip= was not parsed",
-                 portFromArgs ? "from launch args" : "DEFAULT - --port= was not parsed");
-
-    if (const auto name = launchParameters.Get("-name"); name && name->size > 0)
-        settings.name = (*name)[0].c_str();
+    if (auto name = value("name", "-name"); name && !name->empty())
+        settings.name = name->c_str();
     if (settings.name.empty())
-    {
-        // No --name=: tell instances on the same PC apart by their process id.
-        settings.name = fmt::format("V-{}", GetCurrentProcessId() % 1000).c_str();
-    }
-    spdlog::info("Player name: {}", settings.name);
+        settings.name = "V";
+    if (auto password = value("password", "-password"))
+        settings.password = password->c_str();
+    if (auto join = value("join_address", "-join"); join && !join->empty())
+        settings.joinAddress = join->c_str();
+    if (auto port = value("port", "-port"))
+        settings.port = ToPort(*port, settings.port);
+    if (auto maxPlayers = value("max_players", "-max_players"))
+        settings.maxPlayers = std::clamp<uint16_t>(ToPort(*maxPlayers, settings.maxPlayers), 2, 16);
 
-    if (const auto mods = launchParameters.Get("-mod"); mods)
-    {
-        for (const auto& mod : *mods)
-            settings.mods.push_back(mod.c_str());
-    }
-
-    if (launchParameters.Contains("-rpc"))
-    {
-        settings.RpcOnly = true;
-    }
-
-    if (const auto rpcDir = launchParameters.Get("-rpcdir"); rpcDir)
-    {
-        if (rpcDir->size > 0)
-        {
-            // For some reason cyberpunk adds a \ at the start and end of the path...
-            std::string path = std::string((*rpcDir)[0].c_str());
-            path = path.substr(1, path.length() - 2);
-
-            settings.RpcPath = path;
-        }
-    }
+    spdlog::info("Co-op settings ({}): name {}, join {}, host port {}, up to {} players, {}", settings.iniPath.string(),
+                 settings.name, settings.joinAddress, settings.port, settings.maxPlayers,
+                 settings.password.empty() ? "no password" : "password set");
 }

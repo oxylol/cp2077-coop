@@ -1,6 +1,5 @@
 #include "World.h"
 
-#include "Config.h"
 #include "PlayerManager.h"
 #include "Level.h"
 
@@ -9,30 +8,14 @@
 #include "Components/AttachmentComponent.h"
 #include "Components/VehicleComponent.h"
 
-#include "Systems/ChatSystem.h"
-#include "Systems/ServerListSystem.h"
-
-World::World(const FlecsConfig& acFlecsConfig)
+World::World()
 {
     set_entity_range(1, 5'000'000);
 
     emplace<Level>(this);
     emplace<PlayerManager>(this);
-    emplace<ChatSystem>(this);
-    emplace<ServerListSystem>(this);
-
-    if (acFlecsConfig.IsEnabled())
-    {
-        set<flecs::Rest>({
-            .port = acFlecsConfig.GetPort(),
-            .ipaddr = const_cast<char*>(acFlecsConfig.GetIpAddress()),
-            .impl = nullptr
-        });
-        spdlog::info("Running Flecs REST API on {}:{}", acFlecsConfig.IpAddress, acFlecsConfig.Port);
-    }
 
     this->import<flecs::units>();
-    this->import<flecs::stats>();
 
     component<std::string>()
         .opaque(flecs::String)
@@ -61,14 +44,4 @@ World::~World()
 void World::Update(float aDelta)
 {
     progress(aDelta);
-}
-
-gsl::not_null<WorldScriptInstance*> World::GetScriptInstance() noexcept
-{
-    return &m_scriptInstance;
-}
-
-gsl::not_null<const WorldScriptInstance*> World::GetScriptInstance() const noexcept
-{
-    return &m_scriptInstance;
 }

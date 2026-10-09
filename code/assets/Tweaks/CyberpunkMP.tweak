@@ -131,7 +131,7 @@ Items.MuppetArms : Items.BaseHolsteredArms
 // UiPhone/UiVendor method
 
 playerStateMachineDefinitions.InputContext {
-    states += ["uiMultiplayerContext", "uiChatInputContext"];
+    states += ["uiMultiplayerContext"];
 }
 
 playerStateMachineInputContext.uiMultiplayerContext
@@ -158,30 +158,4 @@ playerStateMachineInputContext.uiMultiplayerContext
 		"", "", "ExitCondition"
 	];
 	CName forceInputContext = "UI_Multiplayer";
-}
-
-playerStateMachineInputContext.uiChatInputContext
-{
-	string stateBodyClassName = "";
-	bool[] transitionSkipInternalCondition = [];
-	bool[] transitionConditionOverridesEnterCondition = [];
-	bool hasExitCondition = false;
-	bool hasOnEnter = false;
-	bool hasOnExit = false;
-	bool hasOnUpdate = false;
-	CName affinity = "";
-	CName[] alias = 
-	[
-		"allUIContexts"
-	];
-	bool hasEnterCondition = true;
-	string[] transitionTo = 
-	[
-		"allForcedContexts", "allUIContexts", "gameplayContext"
-	];
-	string[] transitionCondition = 
-	[
-		"", "", "ExitCondition"
-	];
-	CName forceInputContext = "UI_ChatInput";
 }

@@ -27,7 +27,6 @@ public class ChatHotkeyController extends GenericHotkeyController {
   private let m_isVehiclesPopupVisibleBBId: ref<CallbackHandle>;
   private let m_isRadioPopupVisibleBBId: ref<CallbackHandle>;
   private let m_isMultiplayerUIVisibleBBId: ref<CallbackHandle>;
-  private let m_isChatInputVisibleBBId: ref<CallbackHandle>;
   private let m_isConnectedToServerBBId: ref<CallbackHandle>;
   private let m_isRadialMenuVisibleBBId: ref<CallbackHandle>;
   private let m_onScannerModeChangedCallback: ref<CallbackHandle>;
@@ -52,7 +51,6 @@ public class ChatHotkeyController extends GenericHotkeyController {
     this.m_isVehiclesPopupVisibleBBId = this.GetUIBlackboard().RegisterListenerBool(GetAllBlackboardDefs().UIGameData.Popup_VehiclesManager_IsShown, this, n"OnVehiclesManagerPopupIsShown");
     this.m_isRadioPopupVisibleBBId = this.GetUIBlackboard().RegisterListenerBool(GetAllBlackboardDefs().UIGameData.Popup_Radio_IsShown, this, n"OnRadioManagerPopupIsShown");
     this.m_isMultiplayerUIVisibleBBId = this.GetUIBlackboard().RegisterListenerBool(GetAllBlackboardDefs().UIGameData.UIMultiplayerContextRequest, this, n"OnUIMultiplayerIsShown");
-    this.m_isChatInputVisibleBBId = this.GetUIBlackboard().RegisterListenerBool(GetAllBlackboardDefs().UIGameData.UIChatInputContextRequest, this, n"OnUIChatInputIsShown");
     this.m_isConnectedToServerBBId = this.GetUIBlackboard().RegisterListenerBool(GetAllBlackboardDefs().UIGameData.UIMultiplayerConnectedToServer, this, n"OnConnectedToServer");
     this.m_isRadialMenuVisibleBBId = this.m_quickSlotBB.RegisterListenerBool(GetAllBlackboardDefs().UI_QuickSlotsData.UIRadialContextRequest, this, n"OnRadialMenuShown", true);
     this.m_contactsActiveListener = this.m_comDeviceBB.RegisterListenerBool(GetAllBlackboardDefs().UI_ComDevice.ContactsActive, this, n"OnContactsActiveChange");
@@ -104,15 +102,10 @@ public class ChatHotkeyController extends GenericHotkeyController {
     this.ToggleVisibility(Equals(evt.mode, gameScanningMode.Inactive), false);
   }
 
-  private final func OnUIChatInputIsShown(value: Bool) -> Void {
-    // this.ToggleVisibility(!value, false);
-    this.GetRootWidget().SetVisible(!value);
-  }
-
   private final func OnConnectedToServer(value: Bool) -> Void {
     if (value) {
-      this.m_buttonHintController.SetInputAction(n"UIEnterChatMessage");
-      this.m_buttonHintController.SetHoldIndicatorType(inkInputHintHoldIndicationType.Press);
+      this.m_buttonHintController.SetInputAction(n"UIDisconnectFromServer");
+      this.m_buttonHintController.SetHoldIndicatorType(inkInputHintHoldIndicationType.Hold);
     } else {
       this.m_buttonHintController.SetInputAction(n"UIConnectToServer");
       this.m_buttonHintController.SetHoldIndicatorType(inkInputHintHoldIndicationType.Hold);

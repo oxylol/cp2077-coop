@@ -1,84 +1,48 @@
 #include "GameServer.h"
 
-#include <Components/PlayerComponent.h>
-
-#include "Core/Filesystem.h"
 #include "Game/Level.h"
-#include "Scripting/IRpc.h"
-#include "Scripting/RpcScriptInstance.h"
-
 #include "PlayerManager.h"
-
-
-using nlohmann::json;
 
 GameServer* GServer = nullptr;
 
-GameServer::GameServer()
+GameServer::GameServer(const Config& acConfig)
     : Server(client::kIdentifier, server::kIdentifier)
-    , m_log(m_path)
+    , m_config(acConfig)
     , m_lastUpdate(std::chrono::steady_clock::now())
 {
     GServer = this;
 
-    try
-    {
-        auto serverPath = GetPath();
+    // Runs inside the game's frame: never sleep there.
+    SetBlocking(false);
 
-        std::ifstream config(serverPath / "config" / "server.json");
-        if (!config.is_open())
-        {
-            spdlog::info("No configuration file found, creating config/server.json");
-            std::error_code ec;
-            create_directory(serverPath / "config", ec);
-
-            std::ofstream of(serverPath / "config" / "server.json");
-            json data = m_config;
-            of << std::setw(4) << data;
-        }
-        else
-        {
-            json data = json::parse(config);
-            m_config = data.get<Config>();
-        }
-    }
-    catch (std::exception& e)
-    {
-        spdlog::error("Error parsing config.json: {}", e.what());
-        m_run = false;
-        return;
-    }
-
+    // A port taken by something else (another game on this PC, for instance) moves the session to the next one.
     uint16_t port = m_config.Port;
-    while (!Host(port, m_config.TickRate))
+    for (int attempt = 0; attempt < 10 && !Host(port, m_config.TickRate); ++attempt)
     {
-        spdlog::warn("Port {} is already in use, trying {}", port, port + 1);
+        spdlog::warn("[Session] Port {} is already in use, trying {}", port, port + 1);
         port++;
     }
 
-    m_pWorld = MakeUnique<World>(m_config.GetFlecsConfig());
-    m_pWorld->GetScriptInstance()->Initialize();
+    if (!IsListening())
+    {
+        spdlog::error("[Session] Couldn't open a port between {} and {}", m_config.Port, port);
+        return;
+    }
+
+    m_pWorld = MakeUnique<World>();
 
     RegisterHandler<&GameServer::HandleAuthentication>(this);
+    RegisterHandler<&GameServer::HandleReportWorldState>(this);
 
-    spdlog::info("Server started on port {}", GetPort());
+    spdlog::info("[Session] Hosting on port {} (up to {} players, {})", GetPort(), m_config.MaxPlayer,
+                 m_config.Password.empty() ? "no password" : "password set");
 }
 
 GameServer::~GameServer()
 {
-    GServer = nullptr;
-}
-
-void GameServer::Kill()
-{
-    m_run = false;
     Close();
-}
-
-void GameServer::Run()
-{
-    while (m_run && IsListening())
-        Update();
+    if (GServer == this)
+        GServer = nullptr;
 }
 
 void GameServer::OnUpdate()
@@ -90,7 +54,8 @@ void GameServer::OnUpdate()
     m_tasks.Drain();
     m_dispatcher.update();
 
-    m_pWorld->Update(std::chrono::duration_cast<std::chrono::duration<float>>(delta).count());
+    if (m_pWorld)
+        m_pWorld->Update(std::chrono::duration_cast<std::chrono::duration<float>>(delta).count());
 }
 
 void GameServer::OnConsume(const void* apData, uint32_t aSize, ConnectionId aConnectionId)
@@ -101,90 +66,129 @@ void GameServer::OnConsume(const void* apData, uint32_t aSize, ConnectionId aCon
 
     if (const auto result = client::Deserializer::Process(reader, aConnectionId, m_dispatcher); !result)
     {
-        spdlog::error("Failed to deserialize packet from {}", aConnectionId);
+        spdlog::error("[Session] Failed to deserialize packet from {:x}", aConnectionId);
     }
 }
 
 void GameServer::OnConnection(ConnectionId aHandle)
 {
-    // Log at info, with the peer address. At debug level this is invisible by
-    // default, which makes "the client cannot connect" impossible to diagnose:
-    // there is no way to tell a client that never reached us from one that
-    // reached us and failed later.
     char address[SteamNetworkingIPAddr::k_cchMaxString] = {};
     const auto info = GetConnectionInfo(aHandle);
     info.m_addrRemote.ToString(address, sizeof(address), true);
 
-    spdlog::info("Connection received from {} (id {:x})", address, aHandle);
+    spdlog::info("[Session] Connection from {} (id {:x})", address, aHandle);
 }
 
 void GameServer::OnDisconnection(ConnectionId aConnectionId, EDisconnectReason aReason)
 {
-    spdlog::info("Connection {:x} ended (reason {})", aConnectionId, static_cast<uint32_t>(aReason));
+    spdlog::info("[Session] Connection {:x} ended (reason {})", aConnectionId, static_cast<uint32_t>(aReason));
+
+    if (!m_pWorld)
+        return;
 
     auto* pPlayerManager = GetWorld()->get_mut<PlayerManager>();
 
     if (const auto player = pPlayerManager->GetByConnectionId(aConnectionId))
     {
+        std::string username;
         pPlayerManager->Remove(player);
 
         if (auto* pPlayerComponent = player.get<PlayerComponent>())
         {
+            username = pPlayerComponent->Username;
             GetWorld()->get_mut<Level>()->Remove(pPlayerComponent->Puppet);
         }
 
         player.destruct();
 
-        spdlog::info("{}/{} player(s) online", pPlayerManager->Count(), m_config.MaxPlayer);
+        server::NotifyPlayerLeft left;
+        left.set_username(username.c_str());
+        SendToPlayers(left);
+
+        spdlog::info("[Session] {} left, {}/{} player(s)", username, pPlayerManager->Count(), m_config.MaxPlayer);
     }
+}
+
+void GameServer::Refuse(ConnectionId aConnectionId, const char* acReason)
+{
+    server::AuthenticationResponse response;
+    response.set_success(false);
+    response.set_error(acReason);
+    Send(aConnectionId, response);
+    Kick(aConnectionId);
 }
 
 void GameServer::HandleAuthentication(const PacketEvent<client::AuthenticationRequest>& aRequest)
 {
+    const auto connection = aRequest.ConnectionId;
+
+    if (aRequest.get_client_protocol() != client::kIdentifier || aRequest.get_server_protocol() != server::kIdentifier)
+    {
+        spdlog::warn("[Session] {} has another version of the mod (protocol {:x}/{:x}, expected {:x}/{:x})",
+                     aRequest.get_username(), aRequest.get_client_protocol(), aRequest.get_server_protocol(),
+                     client::kIdentifier, server::kIdentifier);
+        Refuse(connection, "The host has another version of the mod.");
+        return;
+    }
+
+    const bool isHost = !m_config.HostToken.empty() && aRequest.get_host_token() == m_config.HostToken.c_str();
+
+    if (!isHost && aRequest.get_password() != m_config.Password.c_str())
+    {
+        spdlog::warn("[Session] {} sent a wrong password", aRequest.get_username());
+        Refuse(connection, "Wrong password: it has to match the host's (coop.ini).");
+        return;
+    }
+
+    auto* pPlayerManager = GetWorld()->get_mut<PlayerManager>();
+    if (!isHost && pPlayerManager->Count() >= m_config.MaxPlayer)
+    {
+        Refuse(connection, "The session is full.");
+        return;
+    }
+
+    const auto host = pPlayerManager->GetHost();
+    const auto* pHost = host ? host.get<PlayerComponent>() : nullptr;
+
     server::AuthenticationResponse response;
-
-    if (aRequest.get_client_protocol() != client::kIdentifier)
-    {
-        response.set_success(false);
-        response.set_error("Invalid protocol version!");
-
-        spdlog::warn("Connection attempt with client identifier {:x}, expected {:x}", aRequest.get_client_protocol(), client::kIdentifier);
-        Send(aRequest.ConnectionId, response);
-        Kick(aRequest.ConnectionId);
-        return;
-    }
-
-    if (aRequest.get_server_protocol() != server::kIdentifier)
-    {
-        response.set_success(false);
-        response.set_error("Invalid protocol version!");
-
-        spdlog::warn("Connection attempt with server identifier {:x}, expected {:x}", aRequest.get_client_protocol(), server::kIdentifier);
-        Send(aRequest.ConnectionId, response);
-        Kick(aRequest.ConnectionId);
-        return;
-    }
-
-    spdlog::info("Authorize connection from {} with token {}", aRequest.get_username(), aRequest.get_token());
     response.set_success(true);
 
     server::Settings settings;
     settings.set_update_rate(m_config.UpdateRate);
     response.set_settings(settings);
+    response.set_host_name(isHost ? aRequest.get_username() : (pHost ? pHost->Username.c_str() : ""));
 
-    server::RpcDefinitions definitions;
+    Send(connection, response);
 
-    const auto* pRpc = static_cast<RpcScriptInstance*>(IRpc::Get());
-    pRpc->Serialize(definitions);
+    // The others learn about the newcomer before it's added, so it doesn't get its own notice.
+    server::NotifyPlayerJoined joined;
+    joined.set_username(aRequest.get_username());
+    SendToPlayers(joined);
 
-    if (!Send(aRequest.ConnectionId, definitions))
-        spdlog::error("Failed to send message to {:x}", aRequest.ConnectionId);
+    pPlayerManager->Create(connection, aRequest.get_username(), isHost);
 
-    if (!Send(aRequest.ConnectionId, response))
-        spdlog::error("Failed to send message to {:x}", aRequest.ConnectionId);
+    if (!isHost && m_worldState)
+        Send(connection, *m_worldState);
 
-    // The player was accepted, rpc definitions are ready, we can create the player's handle
-    GetWorld()->get_mut<PlayerManager>()->Create(aRequest.ConnectionId, aRequest.get_username());
+    spdlog::info("[Session] {} joined{}, {}/{} player(s)", aRequest.get_username(), isHost ? " (host)" : "",
+                 pPlayerManager->Count(), m_config.MaxPlayer);
+}
+
+void GameServer::HandleReportWorldState(const PacketEvent<client::ReportWorldState>& aReport)
+{
+    const auto player = GetWorld()->get_mut<PlayerManager>()->GetByConnectionId(aReport.ConnectionId);
+    const auto* pPlayer = player ? player.get<PlayerComponent>() : nullptr;
+
+    // Only the host's world counts.
+    if (!pPlayer || !pPlayer->IsHost)
+        return;
+
+    server::NotifyWorldState state;
+    state.set_game_time(aReport.get_game_time());
+    state.set_weather(aReport.get_weather());
+    m_worldState = state;
+
+    SendToPlayers(state, aReport.ConnectionId);
 }
 
 ScratchAllocator& GameServer::GetScratch()

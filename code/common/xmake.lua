@@ -1,4 +1,4 @@
-add_requires("hopscotch-map", "snappy", "gamenetworkingsockets", "catch2 2.13.9", "libuv", "openssl", "spdlog")
+add_requires("hopscotch-map", "snappy", "gamenetworkingsockets", "catch2 2.13.9", "libuv", "spdlog")
 add_requireconfs("*.protobuf*", { build = true })
 add_requireconfs("mimalloc", {configs = {rltgenrandom = true}})
 
@@ -37,5 +37,4 @@ target("Common")
         "mimalloc",
         "gamenetworkingsockets",
         "snappy",
-        "openssl",
         "libuv")

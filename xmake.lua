@@ -26,11 +26,8 @@ add_requires(
     "mimalloc 2.1.7",
     "spdlog v1.17.0",
     "hopscotch-map v2.4.0",
-    "cryptopp 8.9.0",
     "gamenetworkingsockets v1.6.0",
     "glm 1.0.3",
-    "openssl 1.1.1-w",
-    "zlib v1.3.2",
     "nlohmann_json v3.12.0",
     "flecs v4.0.3",
     -- 3.19.4 lacks RecordError and absl::string_view; 35.1 removed
@@ -78,50 +75,22 @@ end
 
 includes('tools/codegen')
 includes('tools/check')
-includes('tools/csharp')
 
 -- add projects
 includes("code/netpack")
 includes("code/common")
 includes("code/protocol")
 includes("code/server")
+includes("code/tests")
 
 option("game")
     set_showmenu(true)
     set_default("Cyberpunk2077.exe")
     set_description("Set the path to Cyberpunk2077.exe for easy debugging")
 
-option("rpcdir")
-    set_showmenu(true)
-    set_default("")
-    set_description("Set the path where the RPC files will be generated")
-
 if is_plat("windows") then
     includes("code/assets")
     includes("code/client")
-    includes("code/launcher")
     includes("code/loader")
     includes("vendor/")
-
-    includes("@builtin/xpack")
-
-    xpack("Cyberpunk Multiplayer")
-        set_formats("zip")
-        set_title("Cyberpunk Multiplayer")
-        set_basename("Artifacts")
-        set_author("Tilted Phoques SRL")
-        set_description("Installer for Cyberpunk Multiplayer Launcher")
-        --set_homepage("https://your-project-homepage.com")
-        --set_licensefile("LICENSE.md")  -- Make sure this file exists in your project
-        local function add_files_recursively(dir, root_dir)
-            local relative_path = path.relative(dir, root_dir)
-            add_installfiles(path.join(dir, "*"), {prefixdir = relative_path})
-            for _, subdir in ipairs(os.dirs(path.join(dir, "*"))) do
-                add_files_recursively(subdir, root_dir)
-            end
-        end
-
-        add_files_recursively("distrib/launcher")
-
-        set_version("0.1.0.0")
 end

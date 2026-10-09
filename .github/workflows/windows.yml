@@ -6,16 +6,12 @@ on:
     branches:
       - main
       - dev
+      - 'claude/**'
   # Weekly, so changes outside the repository (runner images, xmake, package recipes) show up before a push
   # does; GitHub mails the failure. Also runnable by hand from the Actions tab.
   schedule:
     - cron: '23 5 * * 1'
   workflow_dispatch:
-
-# NOTE: pnpm doesn't support command 'ci' for now.
-#
-#env:
-#  IS_CI: true
 
 jobs:
   build:
@@ -48,16 +44,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-xmake-packages-
 
-      # Install pnpm for better disk/cache performance
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      # Fix long path issue
-      - name: Setup pnpm
-        run: pnpm config set virtual-store-dir-max-length=50
-
       # Install xmake
       - name: 'Setup xmake'
         uses: xmake-io/github-action-setup-xmake@v1
@@ -68,7 +54,7 @@ jobs:
           actions-cache-folder: '.xmake-cache' # This doesn't cache dependencies, only xmake itself
           actions-cache-key: ${{ runner.os }}-xmake-cache-2.9.9
 
-      # Visual Studio 2022, a Windows SDK below 10.0.26100, xmake, .NET, submodules (tools/check/check-env.ps1)
+      # Visual Studio 2022, a Windows SDK below 10.0.26100, xmake, submodules (tools/check/check-env.ps1)
       - name: 'Check build environment'
         run: ./tools/check/check-env.ps1
 
@@ -79,28 +65,9 @@ jobs:
       - name: 'Check resolved packages'
         run: xmake check-deps
 
-      # Build the game
+      # The mod (CyberpunkCoop.dll with the co-op session in it) and the session tests
       - name: 'Build with xmake'
         run: xmake -y
 
-      # Install node
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
-          cache-dependency-path: |
-            code/launcher/pnpm-lock.yaml
-            code/launcher/electron/pnpm-lock.yaml
-
-      - name: 'Generate build'
-        run: xmake install -o distrib
-
-      - name: 'Package build'
-        run: xmake pack
-
-      - name: 'Upload Artifact'
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: build/xpack/Cyberpunk Multiplayer/Artifacts.zip
+      - name: 'Session tests'
+        run: xmake run Session.Tests

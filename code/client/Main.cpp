@@ -6,8 +6,6 @@
 
 #include "RED4ext/Api/EMainReason.hpp"
 
-extern void CoreStubsInit();
-
 std::filesystem::path GCyberpunkMpLocation;
 
 EXTERN_C IMAGE_DOS_HEADER __ImageBase;
@@ -78,9 +76,9 @@ RED4EXT_C_EXPORT bool Main(RED4ext::PluginHandle aHandle, RED4ext::EMainReason a
         App::GApplication = MakeUnique<App::Application>(aHandle, aSdk);
         App::GApplication->Bootstrap();
 
-        const auto scriptPath = GCyberpunkMpLocation / TP_REDSCRIPT_LOCATION;
-        const wchar_t* scriptLocation = canonical(scriptPath).c_str();
-        aSdk->scripts->Add(aHandle, scriptLocation);
+        // Keep the paths alive while their c_str() is in use.
+        const auto scriptPath = canonical(GCyberpunkMpLocation / TP_REDSCRIPT_LOCATION);
+        aSdk->scripts->Add(aHandle, scriptPath.c_str());
 
         ArchiveXL::RegisterArchives(canonical(GCyberpunkMpLocation / TP_ARCHIVES_LOCATION));
         TweakXL::RegisterTweaks(canonical(GCyberpunkMpLocation / TP_TWEAKS_LOCATION));
@@ -89,33 +87,22 @@ RED4EXT_C_EXPORT bool Main(RED4ext::PluginHandle aHandle, RED4ext::EMainReason a
         void(*pInputLoaderAdd)(RED4ext::PluginHandle, const wchar_t*);
         if (inputLoaderModule != nullptr && (pInputLoaderAdd = reinterpret_cast<decltype(pInputLoaderAdd)>(GetProcAddress(inputLoaderModule, "Add"))))
         {
-            const wchar_t* input_path = canonical(GCyberpunkMpLocation / TP_INPUTS_LOCATION).c_str();
-            pInputLoaderAdd(aHandle, input_path);
+            const auto inputPath = canonical(GCyberpunkMpLocation / TP_INPUTS_LOCATION);
+            pInputLoaderAdd(aHandle, inputPath.c_str());
         }
         else
         {
             const auto message =
-                L"The following CyperpunkMP requirements were not met:\n\n* Input Loader v0.2.0\nPlease ensure the mods "
-                L"above are installed/up-to-date.";
-            MessageBoxW(nullptr, message, L"CyperpunkMP requirements could not be found", MB_SYSTEMMODAL | MB_ICONERROR);
+                L"Cyberpunk Coop needs Input Loader (red4ext\\plugins\\input_loader). It comes with the co-op download: "
+                L"extract the whole zip into the game folder again.";
+            MessageBoxW(nullptr, message, L"Cyberpunk Coop: Input Loader is missing", MB_SYSTEMMODAL | MB_ICONERROR);
             return false;
-        }
-
-        for (auto& mod : Settings::Get().mods)
-        {
-            aSdk->scripts->Add(aHandle, mod.wstring().c_str());
-            ArchiveXL::RegisterArchives(mod);
-            TweakXL::RegisterTweaks(mod);
-            pInputLoaderAdd(aHandle, mod.wstring().c_str());
         }
 
         break;
     }
     case RED4ext::EMainReason::Unload:
     {
-        if (Settings::IsDisabled())
-            return false;
-
         App::GApplication->Shutdown();
         App::GApplication = nullptr;
         break;
@@ -127,9 +114,9 @@ RED4EXT_C_EXPORT bool Main(RED4ext::PluginHandle aHandle, RED4ext::EMainReason a
 
 RED4EXT_C_EXPORT void Query(RED4ext::PluginInfo* aInfo)
 {
-    aInfo->name = L"CyberpunkMP";
-    aInfo->author = L"Tilted Phoques SRL";
-    aInfo->version = RED4EXT_SEMVER(0, 1, 0);
+    aInfo->name = L"Cyberpunk Coop";
+    aInfo->author = L"cp2077-coop, based on CyberpunkMP by Tilted Phoques SRL";
+    aInfo->version = RED4EXT_SEMVER(0, 2, 0);
 
     aInfo->runtime = RED4EXT_V0_RUNTIME_INDEPENDENT;
     aInfo->sdk = RED4EXT_SDK_LATEST;

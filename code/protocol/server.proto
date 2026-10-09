@@ -12,6 +12,7 @@ message AuthenticationResponse {
     bool success = 1;
     string error = 2;
     Settings settings = 3;
+    string host_name = 4;
 }
 
 message SpawnCharacterResponse{
@@ -63,25 +64,18 @@ message NotifyEntityMove {
     common.Vector3 full_rotation = 6;
 }
 
-message ChatMessage {
+message NotifyPlayerJoined {
     string username = 1;
-    string message = 2;
 }
 
-message RpcCall {
-    uint32 id = 1;
-	bytes arguments = 2;
+message NotifyPlayerLeft {
+    string username = 1;
 }
 
-message RpcDefinition {
-    uint32 id = 1;
-    fixed64 klass = 2;
-    fixed64 function = 3;
-}
-
-message RpcDefinitions {
-    repeated RpcDefinition client_definitions = 1;
-    repeated RpcDefinition server_definitions = 2;
+// The host's time of day and weather (client ReportWorldState), sent to the guests.
+message NotifyWorldState {
+    uint32 game_time = 1;
+    uint64 weather = 2;
 }
 
 message Protocol {
@@ -91,12 +85,12 @@ message Protocol {
         NotifyEntityUnload notify_character_unload = 3;
         SpawnCharacterResponse spawn_character_response = 4;
         NotifyEntityMove notify_character_move = 5;
-        ChatMessage chat_message = 6;
-        RpcCall rpc_call = 7;
-        RpcDefinitions rpc_definitions = 8;
         NotifyVehicleLoad notify_vehicle_load = 9;
         NotifyVehicleEnter notify_vehicle_enter = 10;
         NotifyVehicleExit notify_vehicle_exit = 11;
         NotifyVehicleControlAssigned notify_vehicle_control_assigned = 12;
+        NotifyPlayerJoined notify_player_joined = 13;
+        NotifyPlayerLeft notify_player_left = 14;
+        NotifyWorldState notify_world_state = 15;
     }
 }

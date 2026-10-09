@@ -17,8 +17,14 @@ struct Server
 
     bool Host(uint16_t aPort, uint32_t aTickRate, bool bEnableDualStackIP = true) noexcept;
     void Close() noexcept;
+    // Closes every connection but keeps listening. The close notices go out through the listen socket's UDP port,
+    // so keep it open (and updated) a little longer if the players should learn about it rather than time out.
+    void CloseConnections(const char* acReason) noexcept;
 
     void Update() noexcept;
+    // Blocking (the default): Update() sleeps to keep the tick rate, for a server with a thread of its own. A server
+    // updated from someone else's loop (the game's frame) sets this to false.
+    void SetBlocking(bool aBlocking) noexcept { m_blocking = aBlocking; }
 
     enum EDisconnectReason : int
     {
@@ -76,5 +82,6 @@ private:
 
     uint64_t m_clientIdentifier;
     uint64_t m_serverIdentifier;
+    bool m_blocking{true};
 };
 

@@ -18,7 +18,6 @@
 #include "Game/Utils.h"
 #include "Game/CharacterCustomizationSystem.h"
 
-#include "ChatSystem.h"
 
 static uint64_t GTick = 0;
 
@@ -186,14 +185,9 @@ void NetworkWorldSystem::Update(uint64_t aTick)
 
 void NetworkWorldSystem::OnWorldAttached(RED4ext::world::RuntimeScene* aScene)
 {
-    if (Settings::IsDisabled())
-    {
-        return;
-    }
     spdlog::info("[NetworkWorldSystem] OnWorldAttached");
     IGameSystem::OnWorldAttached(aScene);
 
-    m_chatSystem->OnWorldAttached(aScene);
     m_appearanceSystem->OnWorldAttached(aScene);
     m_interpolationSystem->OnWorldAttached(aScene);
     m_vehicleSystem->OnWorldAttached(aScene);
@@ -203,15 +197,10 @@ void NetworkWorldSystem::OnWorldAttached(RED4ext::world::RuntimeScene* aScene)
 
 void NetworkWorldSystem::OnAfterWorldDetach()
 {
-    if (Settings::IsDisabled())
-    {
-        return;
-    }
     spdlog::info("[NetworkWorldSystem] OnAfterWorldDetach");
     m_ready = false;
 
     m_interpolationSystem->OnAfterWorldDetach();
-    m_chatSystem->OnAfterWorldDetach();
     m_vehicleSystem->OnAfterWorldDetach();
 
     m_remotePlayerId = std::nullopt;
@@ -221,10 +210,6 @@ void NetworkWorldSystem::OnAfterWorldDetach()
 
 void NetworkWorldSystem::OnBeforeWorldDetach(RED4ext::world::RuntimeScene* aScene)
 {
-    if (Settings::IsDisabled())
-    {
-        return;
-    }
     IGameSystem::OnBeforeWorldDetach(aScene);
 
     m_appearanceSystem->OnBeforeWorldDetach(aScene);
@@ -418,9 +403,6 @@ void NetworkWorldSystem::OnInitialize(const RED4ext::JobHandle& aJob)
 
     IGameSystem::OnInitialize(aJob);
 
-    if (Settings::IsDisabled())
-        return;
-
     const auto pNetworkService = Core::Container::Get<NetworkService>();
     pNetworkService->RegisterHandler<&NetworkWorldSystem::HandleCharacterLoad>(this);
     pNetworkService->RegisterHandler<&NetworkWorldSystem::HandleEntityUnload>(this);
@@ -437,28 +419,35 @@ void NetworkWorldSystem::OnInitialize(const RED4ext::JobHandle& aJob)
     m_appearanceSystem = RED4ext::MakeHandle<AppearanceSystem>();
     m_appearanceSystem->OnInitialize(aJob);
 
-    m_chatSystem = RED4ext::MakeHandle<ChatSystem>();
-    m_chatSystem->OnInitialize(aJob);
-
     m_vehicleSystem = RED4ext::MakeHandle<VehicleSystem>();
     m_vehicleSystem->OnInitialize(aJob);
 }
 
-void NetworkWorldSystem::Connect()
+void NetworkWorldSystem::Host()
 {
-    auto address = fmt::format("{}:{}", Settings::Get().ip, Settings::Get().port);
-
-    // Log the address we actually dial. The launch arguments must use the
-    // --ip=<addr> --port=<n> form; anything else silently leaves these at their
-    // defaults (127.0.0.1:11778) and the connection times out against your own PC.
-    spdlog::info("Connecting to {}", address);
-
-    Core::Container::Get<NetworkService>()->Connect(address);
+    Core::Container::Get<NetworkService>()->Host();
 }
 
-void NetworkWorldSystem::Disconnect()
+void NetworkWorldSystem::Join()
 {
-    Core::Container::Get<NetworkService>()->Close();
+    Core::Container::Get<NetworkService>()->Join();
+}
+
+void NetworkWorldSystem::Leave()
+{
+    Core::Container::Get<NetworkService>()->Leave();
+}
+
+void NetworkWorldSystem::ShowMessage(const std::string& acText)
+{
+    auto* pFunction = GetNativeType()->GetFunction("ShowMessage");
+    if (!pFunction)
+        return;
+
+    Red::CString text(acText.c_str());
+    RED4ext::StackArgs_t args;
+    args.emplace_back(RED4ext::CRTTISystem::Get()->GetType("String"), &text);
+    ExecuteFunction(this, pFunction, nullptr, args);
 }
 
 void NetworkWorldSystem::OnConnected()

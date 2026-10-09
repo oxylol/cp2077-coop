@@ -1,22 +1,13 @@
-@addMethod(inkTextInput)
-public native func MoveCaret(position: Int32)
-
 // UiPhone/UiVendor method
 
 @addField(UIGameDataDef)
 public let UIMultiplayerContextRequest: BlackboardID_Bool;
 
 @addField(UIGameDataDef)
-public let UIChatInputContextRequest: BlackboardID_Bool;
-
-@addField(UIGameDataDef)
 public let UIMultiplayerConnectedToServer: BlackboardID_Bool;
 
 @addField(PlayerPuppet)
 public let m_multiplayerUIActiveListener: ref<CallbackHandle>;
-
-@addField(PlayerPuppet)
-public let m_chatInputActiveListener: ref<CallbackHandle>;
 
 @wrapMethod(PlayerPuppet)
 private final func EnableUIBlackboardListener(enable: Bool) -> Void {
@@ -25,12 +16,9 @@ private final func EnableUIBlackboardListener(enable: Bool) -> Void {
     let uiBlackboard: ref<IBlackboard> = blackboardSystem.Get(GetAllBlackboardDefs().UIGameData);
     if enable {
         this.m_multiplayerUIActiveListener = uiBlackboard.RegisterListenerBool(GetAllBlackboardDefs().UIGameData.UIMultiplayerContextRequest, this, n"OnUIMultiplayerContextChanged");
-        this.m_chatInputActiveListener = uiBlackboard.RegisterListenerBool(GetAllBlackboardDefs().UIGameData.UIChatInputContextRequest, this, n"OnUIChatInputContextChanged");
     } else {
         uiBlackboard.UnregisterListenerBool(GetAllBlackboardDefs().UIGameData.UIMultiplayerContextRequest, this.m_multiplayerUIActiveListener);
         this.m_multiplayerUIActiveListener = null;
-        uiBlackboard.UnregisterListenerBool(GetAllBlackboardDefs().UIGameData.UIChatInputContextRequest, this.m_chatInputActiveListener);
-        this.m_chatInputActiveListener = null;
     }
 }
 
@@ -43,20 +31,6 @@ protected cb func OnUIMultiplayerContextChanged(value: Bool) -> Bool {
     } else {
         psmEvent = new PSMPostponedParameterBool();
         psmEvent.id = n"OnUIMultiplayerContextInactive";
-    };
-    psmEvent.value = true;
-    this.QueueEvent(psmEvent);
-}
-
-@addMethod(PlayerPuppet)
-protected cb func OnUIChatInputContextChanged(value: Bool) -> Bool {
-    let psmEvent: ref<PSMPostponedParameterBool>;
-    if value {
-        psmEvent = new PSMPostponedParameterBool();
-        psmEvent.id = n"OnUIChatInputContextActive";
-    } else {
-        psmEvent = new PSMPostponedParameterBool();
-        psmEvent.id = n"OnUIChatInputContextInactive";
     };
     psmEvent.value = true;
     this.QueueEvent(psmEvent);
@@ -75,15 +49,3 @@ public class UiMultiplayerContextDecisions extends InputContextTransitionDecisio
   }
 }
 
-public class UiChatInputContextDecisions extends InputContextTransitionDecisions {
-
-  protected const func EnterCondition(const stateContext: ref<StateContext>, const scriptInterface: ref<StateGameScriptInterface>) -> Bool {
-    let psmChatInputResult: StateResultBool = stateContext.GetTemporaryBoolParameter(n"OnUIChatInputContextActive");
-    return psmChatInputResult.value;
-  }
-
-  protected const func ExitCondition(const stateContext: ref<StateContext>, const scriptInterface: ref<StateGameScriptInterface>) -> Bool {
-    let psmChatInputResult: StateResultBool = stateContext.GetTemporaryBoolParameter(n"OnUIChatInputContextInactive");
-    return psmChatInputResult.value;
-  }
-}

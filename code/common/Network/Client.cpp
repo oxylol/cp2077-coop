@@ -7,9 +7,18 @@
 #include "Packet.h"
 #include <google/protobuf/stubs/port.h>
 #include <snappy.h>
+#include <mutex>
+#include <unordered_set>
 
 
 static thread_local Client* s_pClient = nullptr;
+
+// Client and Server share one ISteamNetworkingSockets, and its RunCallbacks() runs every queued connection-status
+// callback, whichever of them calls it: the host's game runs both. So each connection carries its owner in its user
+// data (set when it's created, or on the listen socket, which accepted connections inherit), and the owner is only
+// called while it's alive.
+static std::mutex s_liveClientsLock;
+static std::unordered_set<const Client*> s_liveClients;
 
 Client::Client(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     : m_clientIdentifier(aClientIdentifier)
@@ -24,14 +33,31 @@ Client::Client(uint64_t aClientIdentifier, uint64_t aServerIdentifier) noexcept
     auto* pLoop = static_cast<uv_loop_t*>(m_pLoop);
     uv_loop_init(pLoop);
     pLoop->data = this;
+
+    std::scoped_lock _(s_liveClientsLock);
+    s_liveClients.insert(this);
 }
 
 Client::~Client()
 {
+    {
+        std::scoped_lock _(s_liveClientsLock);
+        s_liveClients.erase(this);
+    }
+
+    // Not Close(): it calls OnDisconnected(), a virtual whose override is already gone at this point.
+    if (m_connection != k_HSteamNetConnection_Invalid)
+    {
+        m_pInterface->CloseConnection(m_connection, 0, nullptr, true);
+        m_connection = k_HSteamNetConnection_Invalid;
+    }
+    if (m_pHandle != nullptr)
+    {
+        uv_cancel(static_cast<uv_req_t*>(m_pHandle));
+    }
+
     uv_loop_close(static_cast<uv_loop_t*>(m_pLoop));
     Allocator::Get()->Free(m_pLoop);
-
-    Client::Close();
 
     SteamInterface::Release();
 }
@@ -60,9 +86,20 @@ void Client::SteamNetConnectionStatusChangedCallback(SteamNetConnectionStatusCha
     if (!apInfo || apInfo->m_hConn == k_HSteamNetConnection_Invalid) [[unlikely]]
         return;
 
-    if (s_pClient) [[likely]]
+    Client* pClient = s_pClient; // a connection without an owner (user data -1): the client running callbacks
+    if (apInfo->m_info.m_nUserData != -1)
     {
-        s_pClient->OnSteamNetConnectionStatusChanged(apInfo);
+        pClient = reinterpret_cast<Client*>(apInfo->m_info.m_nUserData);
+
+        std::scoped_lock _(s_liveClientsLock);
+        if (!s_liveClients.contains(pClient))
+            pClient = nullptr;
+    }
+
+    // Only the current connection: a late event of one it already closed would close the new one.
+    if (pClient && pClient->m_connection == apInfo->m_hConn) [[likely]]
+    {
+        pClient->OnSteamNetConnectionStatusChanged(apInfo);
     }
 }
 
@@ -140,9 +177,10 @@ bool Client::Connect(const SteamNetworkingIPAddr& acEndpoint) noexcept
 {
     Close();
 
-    SteamNetworkingConfigValue_t opt = {};
-    opt.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback));
-    m_connection = m_pInterface->ConnectByIPAddress(acEndpoint, 1, &opt);
+    SteamNetworkingConfigValue_t options[2] = {};
+    options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged, reinterpret_cast<void*>(&SteamNetConnectionStatusChangedCallback));
+    options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, reinterpret_cast<int64_t>(this));
+    m_connection = m_pInterface->ConnectByIPAddress(acEndpoint, 2, options);
 
     return m_connection != k_HSteamNetConnection_Invalid;
 }

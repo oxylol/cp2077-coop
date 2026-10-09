@@ -1,7 +1,5 @@
 #pragma once
 
-#include "Scripting/PlayerManagerScriptInstance.h"
-
 struct World;
 struct PlayerManager
 {
@@ -38,12 +36,11 @@ struct PlayerManager
     Iterator end() { return Iterator(std::end(m_players)); }
 
     World* GetWorld() { return m_pWorld; }
-    flecs::entity Create(ConnectionId aConnectionId, String aUsername) noexcept;
+    flecs::entity Create(ConnectionId aConnectionId, String aUsername, bool aIsHost) noexcept;
     void Remove(flecs::entity aPlayer) noexcept;
     flecs::entity GetByConnectionId(ConnectionId aConnectionId) const noexcept;
-
-    gsl::not_null<PlayerManagerScriptInstance*> GetScriptInstance() noexcept;
-    gsl::not_null<const PlayerManagerScriptInstance*> GetScriptInstance() const noexcept;
+    // The player whose game hosts the session, if it has joined it.
+    flecs::entity GetHost() const noexcept;
 
     //void SendToAll(const ServerMessage& acMessage) const noexcept;
 
@@ -63,5 +60,4 @@ struct PlayerManager
 private:
     TMap m_players;
     gsl::not_null<World*> m_pWorld;
-    PlayerManagerScriptInstance m_scriptInstance;
 };

@@ -1,7 +1,7 @@
-add_requires("imgui", "xbyak", "minhook", "wil", "nameof", "semver")
+add_requires("minhook", "wil", "nameof", "semver")
 
 target("Client")
-    set_basename("CyberpunkMP")
+    set_basename("CyberpunkCoop")
     set_kind("shared")
     set_group("Client")
     set_symbols("debug", "hidden")
@@ -32,20 +32,15 @@ target("Client")
         "Propsys",
         "delayimp")
 
-    add_deps("Common", "Protocol", "RED4ext.SDK", "redscript", "Archives", "Inputs", "Tweaks")
+    add_deps("Common", "Protocol", "Server.Core", "RED4ext.SDK", "redscript", "Archives", "Inputs", "Tweaks")
 
     add_packages(
         "mimalloc",
         "spdlog",
         "hopscotch-map",
-        "cryptopp",
         "gamenetworkingsockets",
-        "imgui",
         "minhook",
         "mem",
-        "openssl",
-        "zlib",
-        "xbyak",
         "glm",
         "nlohmann_json",
         "entt",
@@ -55,6 +50,3 @@ target("Client")
         "microsoft-gsl",
         "flecs")
 
-    on_install(function (target)
-        os.cp(target:targetfile(), path.join(target:installdir("launcher"), "mod", "CyberpunkMP.dll"))
-    end)

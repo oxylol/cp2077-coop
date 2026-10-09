@@ -5,7 +5,7 @@
 #include "Core/Foundation/Feature.hpp"
 #include "Network/Client.h"
 #include "Network/Packet.h"
-#include "Rpc/RpcService.h"
+#include "App/World/WorldSync.h"
 
 template <typename T> struct DebugType;
 
@@ -46,6 +46,13 @@ struct NetworkService final
     entt::dispatcher& GetDispatcher() { return m_dispatcher; }
     const server::Settings& GetServerSettings() const { return m_settings; }
 
+    // The co-op session (in the game: hold "/" to host, "." to join, "/" again to leave; redscript
+    // MultiplayerGameController). Host runs the session in this game (HostSession.h) and joins it.
+    void Host();
+    void Join();
+    void Leave();
+    bool IsHosting() const noexcept { return !m_hostToken.empty(); }
+
     TP_NOCOPYMOVE(NetworkService);
 
 protected:
@@ -58,18 +65,32 @@ protected:
     void OnGameUpdate(RED4ext::CGameApplication* apApp) override;
 
     void HandleAuthentication(const PacketEvent<server::AuthenticationResponse>& aResponse);
+    void HandlePlayerJoined(const PacketEvent<server::NotifyPlayerJoined>& aMessage);
+    void HandlePlayerLeft(const PacketEvent<server::NotifyPlayerLeft>& aMessage);
+    void HandleWorldState(const PacketEvent<server::NotifyWorldState>& aMessage);
+
+    // A line in the middle of the screen, also logged.
+    static void ShowMessage(const std::string& acText);
 
     static ScratchAllocator& GetScratch();
 
 private:
 
-    std::chrono::time_point<std::chrono::steady_clock> m_lastUpdate;
-    bool m_ready = false;
-    bool m_authenticated = false;
-    bool m_isPaused = false;
     entt::dispatcher m_dispatcher;
-    uint64_t m_lastCharacterUpdate{};
     server::Settings m_settings;
+
+    // Connecting or connected.
+    bool m_busy = false;
+    // Accepted by the session.
+    bool m_authenticated = false;
+    // Leave() is closing the connection.
+    bool m_leaving = false;
+    // The session refused us (the reason is already on screen).
+    bool m_refused = false;
+    // Set while hosting: our own game proves it's the host with it.
+    std::string m_hostToken;
+    std::string m_address;
+    WorldSync m_worldSync;
 };
 
 template <NetworkMessage T>
