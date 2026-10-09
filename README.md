@@ -27,16 +27,23 @@ engine calls `code/client/App/World/CoopNative.cpp`, customization lookup `code/
 ## Build (Windows)
 
 Requirements: Visual Studio 2022 (C++ workload), a Windows SDK **below 10.0.26100** (VS Installer → Individual
-components → "Windows 11 SDK (10.0.22621.0)"), [xmake](https://xmake.io), git, .NET 9 SDK and .NET 8 runtime.
+components → "Windows 11 SDK (10.0.22621.0)"), [xmake](https://xmake.io) 2.9.9 or newer, git, .NET 9 SDK and
+.NET 8 runtime.
 (Building the server on Linux needs the .NET 10 SDK instead: CppSharp's Linux build targets it.)
 
 ```powershell
 git clone --recursive https://github.com/oxylol/cp2077-coop.git   # not "Download ZIP": it leaves out vendor\
 cd cp2077-coop
+powershell -ExecutionPolicy Bypass -File tools\check\check-env.ps1   # this PC: VS, Windows SDK, xmake, .NET, submodules
 xmake f -c -m releasedbg --vs_sdkver=10.0.22621.0 --game="C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe" -y
+xmake check-deps               # the libraries xmake picked: one version of each, none built against others
 xmake build Server.Loader      # server + plugins (CoopSystem, JobSystem)
 xmake build Cyberpunk2077      # client; links CyberpunkMP.dll into red4ext\plugins\zzzCyberpunkMP
 ```
+
+The two checks stop with what to fix (a ZIP download, a too-new Windows SDK, two protobuf versions, a library
+built against other versions…) before a long build fails halfway. GitHub runs both, and the whole build, on every
+pull request and every Monday.
 
 `releasedbg` is what upstream's CI builds; `-c` throws away an earlier configuration (e.g. a failed `debug` one).
 The first run builds the libraries (protobuf, abseil, GameNetworkingSockets…) and takes a while. In `releasedbg`

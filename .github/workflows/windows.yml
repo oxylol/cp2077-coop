@@ -6,6 +6,11 @@ on:
     branches:
       - main
       - dev
+  # Weekly, so changes outside the repository (runner images, xmake, package recipes) show up before a push
+  # does; GitHub mails the failure. Also runnable by hand from the Actions tab.
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
 
 # NOTE: pnpm doesn't support command 'ci' for now.
 #
@@ -63,8 +68,16 @@ jobs:
           actions-cache-folder: '.xmake-cache' # This doesn't cache dependencies, only xmake itself
           actions-cache-key: ${{ runner.os }}-xmake-cache-2.9.9
 
+      # Visual Studio 2022, a Windows SDK below 10.0.26100, xmake, .NET, submodules (tools/check/check-env.ps1)
+      - name: 'Check build environment'
+        run: ./tools/check/check-env.ps1
+
       - name: 'Configure xmake and install dependencies'
         run: xmake config --arch=${{ matrix.arch }} --mode=${{ matrix.mode }} --vs_sdkver=10.0.19041.0 --yes
+
+      # One version of each library, no installed library built against other versions (tools/check/check_deps.lua)
+      - name: 'Check resolved packages'
+        run: xmake check-deps
 
       # Build the game
       - name: 'Build with xmake'

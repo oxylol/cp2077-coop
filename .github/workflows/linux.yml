@@ -6,6 +6,11 @@ on:
     branches:
       - main
       - dev
+  # Weekly, so changes outside the repository (runner images, xmake, package recipes) show up before a push
+  # does; GitHub mails the failure. Also runnable by hand from the Actions tab.
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -41,7 +46,7 @@ jobs:
     - name: 'Setup xmake'
       uses: xmake-io/github-action-setup-xmake@v1
       with:
-        xmake-version: branch@master
+        xmake-version: 2.9.9 # same as the Windows build; a moving branch changes under the build
 
     # Update xmake repository (in order to have the file that will be cached)
     - name: 'Update xmake repository'
@@ -59,6 +64,10 @@ jobs:
     - name: 'Configure xmake and install dependencies'
       continue-on-error: true
       run: timeout 30m xmake config --arch=${{ matrix.arch }} --mode=${{ matrix.mode }} --yes
+
+    # One version of each library, no installed library built against other versions (tools/check/check_deps.lua)
+    - name: 'Check resolved packages'
+      run: xmake check-deps
 
     # Build the server
     - name: Build
