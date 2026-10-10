@@ -129,8 +129,8 @@ void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity,
     auto id = acEntity.Id;
 
     // In a car the seat's animations take over (VehicleSystem.reds puts the weapon away and clears the stances):
-    // everything is shown again once out.
-    if (aEntity.has<AttachedComponent>())
+    // everything is shown again once out. Waiting to sit in one too: its player is seated already.
+    if (aEntity.has<AttachedComponent>() || aEntity.has<WaitingSeatComponent>())
     {
         if (aState.Shown)
         {

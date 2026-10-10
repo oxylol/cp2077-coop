@@ -37,6 +37,10 @@ protected:
     void Log(const Red::CString& acText);
     // Another player's character sits in it here (whatever the seat).
     bool HasRemoteCharacters(Red::EntityID aVehicle);
+    // Someone sits at its wheel here: this player, or another player's character.
+    bool HasDriver(Red::EntityID aVehicle) const;
+    // The characters waiting to sit on its passenger side (WaitingSeatComponent) are seated: someone took its wheel.
+    void SeatWaitingPassengers(Red::EntityID aVehicle);
 
     bool HandleVehicleLoadMessage(const PacketEvent<server::NotifyVehicleLoad>& aMessage);
     bool HandleVehicleEnterMessage(const PacketEvent<server::NotifyVehicleEnter>& aMessage);
@@ -61,6 +65,7 @@ private:
     Red::CBaseFunction* m_pExitVehicle;
     std::optional<uint64_t> m_vehicleRemoteId;
     std::optional<Red::EntityID> m_vehicleGameId;
+    bool m_vehicleDriverSeat{false}; // this player sits at its wheel
     // Vehicles here with another player at the wheel: kinematic, moved by that player's updates (DoMount).
     Core::Set<Red::EntityID> m_remoteDriven;
     uint64_t m_lastDrivingLog{0};

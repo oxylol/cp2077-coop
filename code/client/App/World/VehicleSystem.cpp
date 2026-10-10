@@ -37,6 +37,7 @@ void VehicleSystem::OnDisconnected()
 {
     m_vehicleRemoteId = std::nullopt;
     m_vehicleGameId = std::nullopt;
+    m_vehicleDriverSeat = false;
     m_pendingMounts.clear();
     m_remoteDriven.clear();
 }
@@ -126,14 +127,20 @@ void VehicleSystem::OnVehicleEnter(Red::EntityID aVehicle, const Red::TweakDBID&
 
     m_vehicleGameId = aVehicle;
     m_vehicleRemoteId = std::nullopt; // until the session makes this player its driver
+    m_vehicleDriverSeat = aName == Red::CName("seat_front_left");
 
     pNetworkService->Send(request);
+
+    // Someone at the wheel now: whoever waited to sit on the passenger side sits.
+    if (m_vehicleDriverSeat)
+        SeatWaitingPassengers(aVehicle);
 }
 
 void VehicleSystem::OnVehicleExit()
 {
     m_vehicleGameId = std::nullopt;
     m_vehicleRemoteId = std::nullopt;
+    m_vehicleDriverSeat = false;
 
     spdlog::info("[VehicleSystem] OnVehicleExit");
     const auto pNetworkService = Core::Container::Get<NetworkService>();
@@ -229,6 +236,36 @@ void VehicleSystem::Log(const Red::CString& acText)
     spdlog::info("[VehicleSystem.reds] {}", acText.c_str());
 }
 
+bool VehicleSystem::HasDriver(Red::EntityID aVehicle) const
+{
+    if (m_vehicleDriverSeat && m_vehicleGameId == aVehicle)
+        return true;
+
+    bool driver = false;
+    Red::GetGameSystem<NetworkWorldSystem>()->each([&driver, aVehicle](flecs::entity, const AttachedComponent& acAttached) {
+        driver = driver || (acAttached.Driver && acAttached.Vehicle == aVehicle);
+    });
+    return driver;
+}
+
+void VehicleSystem::SeatWaitingPassengers(Red::EntityID aVehicle)
+{
+    // Collected first, then seated: not while iterating.
+    std::vector<std::pair<flecs::entity, Red::CName>> waiting;
+    Red::GetGameSystem<NetworkWorldSystem>()->each(
+        [&waiting, aVehicle](flecs::entity aCharacter, const WaitingSeatComponent& acWaiting) {
+            if (acWaiting.Vehicle == aVehicle)
+                waiting.emplace_back(aCharacter, acWaiting.Seat);
+        });
+
+    for (auto& [character, seat] : waiting)
+    {
+        character.remove<WaitingSeatComponent>();
+        if (character.is_alive())
+            DoMount(character, aVehicle, seat);
+    }
+}
+
 bool VehicleSystem::HasRemoteCharacters(Red::EntityID aVehicle)
 {
     bool aboard = false;
@@ -279,7 +316,10 @@ bool VehicleSystem::HandleVehicleExitMessage(const PacketEvent<server::NotifyVeh
     const auto worldSystem = Red::GetGameSystem<NetworkWorldSystem>();
     auto characterEntity = worldSystem->GetEntityByServerId(aMessage.get_character_id());
     if (characterEntity.is_alive())
+    {
+        characterEntity.remove<WaitingSeatComponent>(); // got out before anyone took the wheel
         Unseat(characterEntity);
+    }
 
     return true;
 }
@@ -378,6 +418,16 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
     const auto character = worldSystem->GetEntityIdByServerId(aCharacter);
     const auto handle = Red::Handle(this);
     bool res = false;
+    const bool driver = aSit == Red::CName("seat_front_left");
+
+    // On the passenger side of a car with nobody at its wheel: not seated until someone is (WaitingSeatComponent).
+    if (!driver && !HasDriver(aVehicle))
+    {
+        spdlog::info("[VehicleSystem] character {} waits to sit in {} of vehicle {}: nobody at its wheel", character.hash,
+                     aSit.ToString(), aVehicle.hash);
+        aCharacter.set<WaitingSeatComponent>({aVehicle, aSit});
+        return;
+    }
 
     spdlog::info("[VehicleSystem] seating character {} in {} of vehicle {}{}", character.hash, aSit.ToString(), aVehicle.hash,
                  m_remoteDriven.count(aVehicle) ? " (driven by another player)" : "");
@@ -388,7 +438,6 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
 
     // Only a driver drives it: a passenger leaves the vehicle as it is (prepared for driving with nobody at the wheel,
     // the game crashed when someone got in on the passenger side).
-    const bool driver = aSit == Red::CName("seat_front_left");
     aCharacter.set<AttachedComponent>({aVehicle, driver});
     if (!driver)
         return;
@@ -402,14 +451,15 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
 
         // Kinematic (InterpolationSystem moves it), engine running: only what's undone when the driver gets out
         // (ReleaseRemoteDriving). The flags and engine state CyberpunkMP also set here (DriveAction::OnStart's, as the
-        // game's AI driving sets them) stayed on the car, and the game crashed when someone sat in it with nobody at
-        // the wheel; the last of them, "not the player's to drive", left a car this player had driven themselves
-        // undrivable, and crashed the game the same way (seating someone on the passenger side of it, empty, after
-        // another player drove it: every time, and only in a car this player had driven).
+        // game's AI driving sets them) stayed on the car: the last of them, "not the player's to drive", left a car
+        // this player had driven themselves undrivable.
         static Core::RawFunc<1585713002UL, void (*)(Red::vehicle::BaseObject*, bool)> SetKinematic;
         SetKinematic(vehicle, true);
         SetVehicleEngine(aVehicle, true);
     }
+
+    // Someone at the wheel now: whoever waited to sit on the passenger side sits.
+    SeatWaitingPassengers(aVehicle);
 }
 
 void VehicleSystem::SetVehicleEngine(Red::EntityID aVehicle, bool aOn)

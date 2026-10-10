@@ -72,8 +72,9 @@ void InterpolateEntity(flecs::entity aEntity, const EntityComponent& aEntityComp
             return;
     }
 
-    // Seated in a vehicle: the seat moves the character, until it's out.
-    if (aEntity.has<AttachedComponent>())
+    // Seated in a vehicle: the seat moves the character, until it's out. Waiting to sit (WaitingSeatComponent): it
+    // stays where it stands, not walked into the seat its moves are from.
+    if (aEntity.has<AttachedComponent>() || aEntity.has<WaitingSeatComponent>())
     {
         if (aEntityComponent.Controller)
             aEntityComponent.Controller->SetFrozen(true);

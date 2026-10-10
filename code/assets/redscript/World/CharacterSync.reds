@@ -83,11 +83,23 @@ public native class CharacterSync extends IScriptable {
             npc.QueueEvent(stanceChanged);
         }
 
-        // A drawn weapon is held ready, as NPCs in combat hold theirs.
+        // A drawn weapon is held ready, as NPCs in combat hold theirs. Crouched without one, the character sneaks, as
+        // NPCs do in their stealth state: its animation sets (the log's) crouch-walk only in that state, under
+        // "stealthLocomotion" (NPCStatesComponent.GetAnimWrapperNameBasedOnHighLevelState).
+        let sneaking = crouched && !armed;
         let highLevel = new AnimFeature_NPCState();
-        highLevel.state = armed ? EnumInt(gamedataNPCHighLevelState.Combat) : EnumInt(gamedataNPCHighLevelState.Relaxed);
+        if armed {
+            highLevel.state = EnumInt(gamedataNPCHighLevelState.Combat);
+        } else {
+            if sneaking {
+                highLevel.state = EnumInt(gamedataNPCHighLevelState.Stealth);
+            } else {
+                highLevel.state = EnumInt(gamedataNPCHighLevelState.Relaxed);
+            }
+        }
         AnimationControllerComponent.ApplyFeature(npc, n"highLevelState", highLevel);
         AnimationControllerComponent.SetAnimWrapperWeightOnOwnerAndItems(npc, n"combatLocomotion", armed ? 1.0 : 0.0);
+        AnimationControllerComponent.SetAnimWrapperWeightOnOwnerAndItems(npc, n"stealthLocomotion", sneaking ? 1.0 : 0.0);
 
         // The graph's own numbers (NPCStatesComponent.GetUpperBodyStateForAnimGraph): aim 1, normal 6, reload 8.
         let reloading = weaponState == EnumInt(gamePSMRangedWeaponStates.Reload) || upperBody == EnumInt(gamePSMUpperBodyStates.Reload);
@@ -336,6 +348,7 @@ public static func CoopClearForVehicle(npc: ref<GameObject>) -> Void {
     }
     AnimationControllerComponent.SetAnimWrapperWeightOnOwnerAndItems(npc, n"inCrouch", 0.0);
     AnimationControllerComponent.SetAnimWrapperWeightOnOwnerAndItems(npc, n"combatLocomotion", 0.0);
+    AnimationControllerComponent.SetAnimWrapperWeightOnOwnerAndItems(npc, n"stealthLocomotion", 0.0);
     let highLevel = new AnimFeature_NPCState();
     highLevel.state = EnumInt(gamedataNPCHighLevelState.Relaxed);
     AnimationControllerComponent.ApplyFeature(npc, n"highLevelState", highLevel);
