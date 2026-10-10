@@ -60,6 +60,13 @@ public native class CharacterSync extends IScriptable {
         // The character is the player's own body (player_ma_tpp_cutscene.ent), whose graph may take the player's
         // inputs rather than an NPC's: the player's state machine crouches it with this (locomotionTransitions.script).
         AnimationControllerComponent.SetInputFloat(npc, n"crouch", crouched ? 1.0 : 0.0);
+        // Its graph is the NPCs' (humanoid.animgraph, as the log shows). Their stance reaches it as this feature, which
+        // only the game's own NPC movement sets (no script does); the character's movement is the mod's, so nothing
+        // set it, and it stood. Under the names the graph may read it by.
+        let animStance = new AnimFeature_Stance();
+        animStance.SetStanceState(crouched ? animStanceState.Crouch : animStanceState.Stand);
+        AnimationControllerComponent.ApplyFeature(npc, n"Stance", animStance);
+        AnimationControllerComponent.ApplyFeature(npc, n"stance", animStance);
         // And the NPC's own state, which the game keeps and its movement may read (NPCStatesComponent
         // UpdateStanceState, without the AI): the features above alone never showed.
         let states = npc.GetStatesComponent();
@@ -222,10 +229,10 @@ public native class CharacterSync extends IScriptable {
 
     // Weapon drawn: the character's chest, arms and weapon turn to where its player aims (pitch: up or down, radians),
     // as NPCs aim with a look-at (reactionComponent.script). Otherwise, or with no character, the look-at goes.
-    public func ApplyAim(id: EntityID, armed: Bool, pitch: Float) -> Void {
+    public func ApplyAim(id: EntityID, armed: Bool, aiming: Bool, pitch: Float) -> Void {
         let aims = GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(n"CyberpunkMP.World.CoopAims") as CoopAims;
         if IsDefined(aims) {
-            aims.Apply(this.Puppet(id), id, armed, pitch);
+            aims.Apply(this.Puppet(id), id, armed, aiming, pitch);
         }
     }
 
@@ -233,7 +240,7 @@ public native class CharacterSync extends IScriptable {
     public func ForgetAim(id: EntityID) -> Void {
         let aims = GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(n"CyberpunkMP.World.CoopAims") as CoopAims;
         if IsDefined(aims) {
-            aims.Apply(this.Puppet(id), id, false, 0.0);
+            aims.Apply(this.Puppet(id), id, false, false, 0.0);
         }
     }
 
@@ -258,8 +265,11 @@ public class CoopAims extends ScriptableSystem {
     private let m_events: array<ref<LookAtAddEvent>>;
     private let m_targets: array<ref<IPositionProvider>>;
 
-    public func Apply(npc: ref<ScriptedPuppet>, id: EntityID, armed: Bool, pitch: Float) -> Void {
+    public func Apply(npc: ref<ScriptedPuppet>, id: EntityID, armed: Bool, aiming: Bool, pitch: Float) -> Void {
         let index = ArrayFindFirst(this.m_ids, id);
+        if IsDefined(npc) {
+            CoopApplyAimFeature(npc, armed && aiming, pitch);
+        }
         if !armed || !IsDefined(npc) {
             if index >= 0 {
                 if IsDefined(npc) {
@@ -342,6 +352,20 @@ protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: r
     }
 }
 
+// The animation variables an animation set is used under (" when inCrouch, Rifle"), if any.
+public static func CoopDescribeVariables(names: array<CName>) -> String {
+    if ArraySize(names) == 0 {
+        return "";
+    }
+    let text = " when";
+    let i = 0;
+    while i < ArraySize(names) {
+        text += (i == 0 ? " " : ", ") + NameToString(names[i]);
+        i += 1;
+    }
+    return text;
+}
+
 // A game path, as text where Codeware knows it, and its hash (which names it in the game's path lists otherwise).
 public static func CoopDescribePath(path: ResRef) -> String {
     return ResRef.ToString(path) + " [" + ToString(ResRef.GetHash(path)) + "]";
@@ -360,7 +384,8 @@ public static func CoopDescribeAnimated(entity: ref<Entity>) -> Void {
             let j = 0;
             while j < ArraySize(setup.gameplay) {
                 let set = setup.gameplay[j].animSet;
-                CoopLog("animation:     gameplay " + CoopDescribePath(ResourceAsyncRef.GetPath(set)));
+                CoopLog("animation:     gameplay " + CoopDescribePath(ResourceAsyncRef.GetPath(set))
+                    + CoopDescribeVariables(setup.gameplay[j].variableNames));
                 j += 1;
             }
             j = 0;
@@ -372,4 +397,18 @@ public static func CoopDescribeAnimated(entity: ref<Entity>) -> Void {
         }
         i += 1;
     }
+}
+
+// NPCs aim through this feature (the game's own aiming sets it, no script does): aimed or not, and where, 10 m ahead of
+// the character at its player's pitch. Under the names the NPCs' graph may read it by.
+public static func CoopApplyAimFeature(npc: ref<ScriptedPuppet>, aiming: Bool, pitch: Float) -> Void {
+    let forward = Vector4.Normalize2D(npc.GetWorldForward());
+    let reach = 10.0 * CosF(pitch);
+    let point = npc.GetWorldPosition() + new Vector4(forward.X * reach, forward.Y * reach, 1.5 + 10.0 * SinF(pitch), 0.0);
+    let aim = new AnimFeature_Aim();
+    aim.SetAimState(aiming ? animAimState.Aimed : animAimState.Unaimed);
+    aim.SetZoomState(aiming ? animAimState.Aimed : animAimState.Unaimed);
+    aim.Aim(point);
+    AnimationControllerComponent.ApplyFeature(npc, n"Aim", aim);
+    AnimationControllerComponent.ApplyFeature(npc, n"aim", aim);
 }

@@ -39,7 +39,6 @@ void VehicleSystem::OnDisconnected()
     m_vehicleGameId = std::nullopt;
     m_pendingMounts.clear();
     m_remoteDriven.clear();
-    m_notPlayerControlled.clear();
 }
 
 void VehicleSystem::OnInitialize(const RED4ext::JobHandle& aJob)
@@ -230,6 +229,15 @@ void VehicleSystem::Log(const Red::CString& acText)
     spdlog::info("[VehicleSystem.reds] {}", acText.c_str());
 }
 
+bool VehicleSystem::HasRemoteCharacters(Red::EntityID aVehicle)
+{
+    bool aboard = false;
+    Red::GetGameSystem<NetworkWorldSystem>()->each([&aboard, aVehicle](flecs::entity, const AttachedComponent& acAttached) {
+        aboard = aboard || acAttached.Vehicle == aVehicle;
+    });
+    return aboard;
+}
+
 void VehicleSystem::OnVehicleReady(const Red::EntityID& aVehicleEntityId)
 {
     spdlog::info("[VehicleSystem] OnVehicleReady");
@@ -361,18 +369,6 @@ bool VehicleSystem::HandleVehicleControlMessage(const PacketEvent<server::Notify
     // player (or, after sliding over from the passenger seat, about to get them out).
     ReleaseRemoteDriving(*m_vehicleGameId, false);
 
-    // Another player drove it here before: it was told it isn't the player's to drive (DoMount, as the game's AI driving
-    // tells its cars), and nothing told it otherwise. This player sits at its wheel now.
-    if (m_notPlayerControlled.erase(*m_vehicleGameId))
-    {
-        static Core::RawFunc<4039776020UL, void (*)(Red::vehicle::BaseObject*, bool)> SetIsPlayerControlled;
-        if (const auto pVehicle = Red::Cast<Red::vehicle::BaseObject>(worldSystem->GetEntity(*m_vehicleGameId)))
-        {
-            SetIsPlayerControlled(pVehicle, true);
-            spdlog::info("[VehicleSystem] vehicle {} is the player's to drive again", m_vehicleGameId->hash);
-        }
-    }
-
     return true;
 }
 
@@ -404,14 +400,13 @@ void VehicleSystem::DoMount(flecs::entity aCharacter, Red::EntityID aVehicle, Re
     {
         m_remoteDriven.insert(aVehicle);
 
-        // Not this player's to drive, kinematic (InterpolationSystem moves it), engine running. Only what can be undone
-        // when the driver gets out (ReleaseRemoteDriving): the flags and engine state CyberpunkMP also set here
-        // (vehicle::actions::DriveAction::OnStart's) stayed on the car after, and the game crashed when someone sat
-        // in it with nobody at the wheel.
-        static Core::RawFunc<4039776020UL, void (*)(Red::vehicle::BaseObject*, bool)> SetIsPlayerControlled;
+        // Kinematic (InterpolationSystem moves it), engine running: only what's undone when the driver gets out
+        // (ReleaseRemoteDriving). The flags and engine state CyberpunkMP also set here (DriveAction::OnStart's, as the
+        // game's AI driving sets them) stayed on the car, and the game crashed when someone sat in it with nobody at
+        // the wheel; the last of them, "not the player's to drive", left a car this player had driven themselves
+        // undrivable, and crashed the game the same way (seating someone on the passenger side of it, empty, after
+        // another player drove it: every time, and only in a car this player had driven).
         static Core::RawFunc<1585713002UL, void (*)(Red::vehicle::BaseObject*, bool)> SetKinematic;
-        SetIsPlayerControlled(vehicle, false);
-        m_notPlayerControlled.insert(aVehicle);
         SetKinematic(vehicle, true);
         SetVehicleEngine(aVehicle, true);
     }

@@ -10,6 +10,8 @@ public native class VehicleSystem extends IScriptable {
     public native func OnVehicleReady(entityID: EntityID) -> Void;
     // A line in the mod's log (CyberpunkCoop.log).
     public native func Log(text: String) -> Void;
+    // Another player's character sits in the vehicle here, whatever the seat (as the mod seated them).
+    public native func HasRemoteCharacters(vehicleID: EntityID) -> Bool;
 
     public func OnWorldAttached() -> Void {
         let callbackSystem = GameInstance.GetCallbackSystem();
@@ -275,20 +277,10 @@ public static func CoopDescribe(object: wref<GameObject>) -> String {
     return "an NPC";
 }
 
-// Another player's character sits in the vehicle (whatever the seat).
+// Another player's character sits in the vehicle (whatever the seat), as the mod seated them.
 public static func CoopStandInsAboard(vehicle: wref<VehicleObject>) -> Bool {
-    if !IsDefined(vehicle) {
-        return false;
-    }
-    let mounts = GameInstance.GetMountingFacility(vehicle.GetGame()).GetMountingInfoMultipleWithIds(vehicle.GetEntityID());
-    let i = 0;
-    while i < ArraySize(mounts) {
-        if GameInstance.GetDynamicEntitySystem().IsTagged(mounts[i].childId, n"CyberpunkMP.Puppet") {
-            return true;
-        }
-        i += 1;
-    }
-    return false;
+    let vehicles = GameInstance.GetNetworkWorldSystem().GetVehicleSystem();
+    return IsDefined(vehicle) && IsDefined(vehicles) && vehicles.HasRemoteCharacters(vehicle.GetEntityID());
 }
 
 // A seat another player's character got out of, released (ExitVehicle), as the game's own exits release theirs.
@@ -304,7 +296,7 @@ public class CoopSeatReleaseCallback extends DelayCallback {
 }
 
 // "NoDriver" for a car another player's character got out of the driver seat of, unless someone sits at its wheel
-// again, or it still carries another player's character (VehicleComponent.SendAIEvent below).
+// again, or it still carries another player's character.
 public class CoopNoDriverCallback extends DelayCallback {
     public let vehicle: wref<VehicleObject>;
 
@@ -326,17 +318,12 @@ public class CoopNoDriverCallback extends DelayCallback {
     }
 }
 
-// The driver got out: the car tells its AI "NoDriver", which acts on the passengers left. Another player's character
-// among them was never seated by that AI: the game died, every time, right after the player got out of the driver seat
-// with one of them still on the passenger side. Their own player's game says when they get out.
+// The driver got out: the car tells its AI "NoDriver", for the log (it was sent with another player's character on the
+// passenger side, and nothing went wrong).
 @wrapMethod(VehicleComponent)
 private final func SendAIEvent(eventName: CName) -> Void {
     if Equals(eventName, n"NoDriver") && CoopInSession() {
-        if CoopStandInsAboard(this.GetVehicle()) {
-            CoopLog("car: no NoDriver, another player's character rides in it");
-            return;
-        }
-        CoopLog("car: NoDriver");
+        CoopLog("car: NoDriver" + (CoopStandInsAboard(this.GetVehicle()) ? ", another player's character aboard" : ""));
     }
     wrappedMethod(eventName);
 }

@@ -35,6 +35,8 @@ protected:
     void OnVehicleExit();
     void OnVehicleReady(const Red::EntityID& vehicle);
     void Log(const Red::CString& acText);
+    // Another player's character sits in it here (whatever the seat).
+    bool HasRemoteCharacters(Red::EntityID aVehicle);
 
     bool HandleVehicleLoadMessage(const PacketEvent<server::NotifyVehicleLoad>& aMessage);
     bool HandleVehicleEnterMessage(const PacketEvent<server::NotifyVehicleEnter>& aMessage);
@@ -61,8 +63,6 @@ private:
     std::optional<Red::EntityID> m_vehicleGameId;
     // Vehicles here with another player at the wheel: kinematic, moved by that player's updates (DoMount).
     Core::Set<Red::EntityID> m_remoteDriven;
-    // Vehicles told they're not the player's to drive (DoMount), until this player takes their wheel.
-    Core::Set<Red::EntityID> m_notPlayerControlled;
     uint64_t m_lastDrivingLog{0};
 };
 
@@ -72,4 +72,5 @@ RTTI_DEFINE_CLASS(VehicleSystem, {
     RTTI_METHOD(OnVehicleExit);
     RTTI_METHOD(OnVehicleReady);
     RTTI_METHOD(Log);
+    RTTI_METHOD(HasRemoteCharacters);
 });

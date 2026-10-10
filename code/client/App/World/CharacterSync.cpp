@@ -135,8 +135,9 @@ void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity,
         if (aState.Shown)
         {
             bool armed = false;
+            bool aiming = false;
             float pitch = 0.f;
-            if (!Red::CallVirtual(this, "ApplyAim", id, armed, pitch))
+            if (!Red::CallVirtual(this, "ApplyAim", id, armed, aiming, pitch))
                 Failed("ApplyAim");
         }
         aState.Shown = false;
@@ -216,9 +217,11 @@ void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity,
             Failed("ApplyStance");
     }
 
-    // Where they aim, while their weapon is out: every run, as they move and look around.
+    // Where they aim, while their weapon is out: every run, as they move and look around. Aiming down the sights, the
+    // upper body's aim state (gamePSMUpperBodyStates.Aim).
     auto pitch = aState.AimPitch;
-    if (!Red::CallVirtual(this, "ApplyAim", id, armed, pitch))
+    bool aiming = aState.UpperBody == 6;
+    if (!Red::CallVirtual(this, "ApplyAim", id, armed, aiming, pitch))
         Failed("ApplyAim");
 }
 
