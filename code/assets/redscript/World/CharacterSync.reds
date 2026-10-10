@@ -60,6 +60,21 @@ public native class CharacterSync extends IScriptable {
         // The character is the player's own body (player_ma_tpp_cutscene.ent), whose graph may take the player's
         // inputs rather than an NPC's: the player's state machine crouches it with this (locomotionTransitions.script).
         AnimationControllerComponent.SetInputFloat(npc, n"crouch", crouched ? 1.0 : 0.0);
+        // And the NPC's own state, which the game keeps and its movement may read (NPCStatesComponent
+        // UpdateStanceState, without the AI): the features above alone never showed.
+        let states = npc.GetStatesComponent();
+        let stanceState = crouched ? gamedataNPCStanceState.Crouch : gamedataNPCStanceState.Stand;
+        if IsDefined(states) && NotEquals(states.GetCurrentStanceState(), stanceState) {
+            states.SetPreviousStanceState(states.GetCurrentStanceState());
+            states.SetCurrentStanceState(stanceState);
+            let puppetState = npc.GetPuppetStateBlackboard();
+            if IsDefined(puppetState) {
+                puppetState.SetInt(GetAllBlackboardDefs().PuppetState.Stance, EnumInt(stanceState));
+            }
+            let stanceChanged = new StanceStateChangeEvent();
+            stanceChanged.state = stanceState;
+            npc.QueueEvent(stanceChanged);
+        }
 
         // A drawn weapon is held ready, as NPCs in combat hold theirs.
         let highLevel = new AnimFeature_NPCState();
@@ -80,6 +95,17 @@ public native class CharacterSync extends IScriptable {
             }
         }
         AnimationControllerComponent.ApplyFeature(npc, n"upperBodyState", upper);
+        if IsDefined(states) {
+            if reloading {
+                states.SetCurrentUpperBodyState(gamedataNPCUpperBodyState.Reload);
+            } else {
+                if upper.state == 1 {
+                    states.SetCurrentUpperBodyState(gamedataNPCUpperBodyState.Aim);
+                } else {
+                    states.SetCurrentUpperBodyState(gamedataNPCUpperBodyState.Normal);
+                }
+            }
+        }
 
         // Aiming down the sights, as the player's state machine tells the player's body (defaultTransition.script
         // SetZoomStateAnimFeature), on the character and its weapon.
@@ -104,6 +130,32 @@ public native class CharacterSync extends IScriptable {
         }
         return reloading;
     }
+
+    // What the character is animated with, into the log, once: its template, its animated components' graphs and
+    // animation sets (as the game's paths, or their hashes), and whether it has the NPC state component. Crouching
+    // and aiming never showed: this says which animations it has to show them with. False until it exists.
+    public func DescribeAnimation(id: EntityID) -> Bool {
+        let npc = this.Puppet(id);
+        if !IsDefined(npc) {
+            return false;
+        }
+        let template = npc.GetTemplatePath();
+        CoopLog("animation: character " + EntityID.ToDebugString(id) + ", template " + CoopDescribePath(template)
+            + ", NPC states " + (IsDefined(npc.GetStatesComponent()) ? "yes" : "no")
+            + ", AI " + (IsDefined(npc.GetAIControllerComponent()) ? "yes" : "no"));
+        CoopDescribeAnimated(npc);
+        if !this.m_describedPlayer {
+            this.m_describedPlayer = true;
+            let player = GetPlayer(npc.GetGame());
+            if IsDefined(player) {
+                CoopLog("animation: this player, template " + CoopDescribePath(player.GetTemplatePath()));
+                CoopDescribeAnimated(player);
+            }
+        }
+        return true;
+    }
+
+    private let m_describedPlayer: Bool;
 
     // The animation system's combat mode, as NPCs enter it with their weapon out. Called when it changes.
     public func ApplyCombatMode(id: EntityID, armed: Bool) -> Void {
@@ -287,5 +339,37 @@ protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: r
     let sync = GameInstance.GetNetworkWorldSystem().GetCharacterSync();
     if IsDefined(sync) {
         sync.OnLocalShot();
+    }
+}
+
+// A game path, as text where Codeware knows it, and its hash (which names it in the game's path lists otherwise).
+public static func CoopDescribePath(path: ResRef) -> String {
+    return ResRef.ToString(path) + " [" + ToString(ResRef.GetHash(path)) + "]";
+}
+
+public static func CoopDescribeAnimated(entity: ref<Entity>) -> Void {
+    let components = entity.GetComponents();
+    let i = 0;
+    while i < ArraySize(components) {
+        let animated = components[i] as AnimatedComponent;
+        if IsDefined(animated) {
+            let graph = animated.graph;
+            CoopLog("animation:   " + NameToString(animated.GetName()) + " (" + NameToString(animated.GetClassName())
+                + "), graph " + CoopDescribePath(ResourceRef.GetPath(graph)));
+            let setup = animated.animations;
+            let j = 0;
+            while j < ArraySize(setup.gameplay) {
+                let set = setup.gameplay[j].animSet;
+                CoopLog("animation:     gameplay " + CoopDescribePath(ResourceAsyncRef.GetPath(set)));
+                j += 1;
+            }
+            j = 0;
+            while j < ArraySize(setup.cinematics) {
+                let set = setup.cinematics[j].animSet;
+                CoopLog("animation:     cinematic " + CoopDescribePath(ResourceAsyncRef.GetPath(set)));
+                j += 1;
+            }
+        }
+        i += 1;
     }
 }

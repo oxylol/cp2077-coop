@@ -149,6 +149,21 @@ public native class VehicleSystem extends IScriptable {
             mounting.Unmount(request);
         }
 
+        // Telling the car the seat empties reserves it while the character gets out (vehicleComponentPS.script
+        // OnVehicleStartedUnmountingEvent: the car seated the character as an NPC passenger), until the unmount
+        // releases it. The game's exits get out with an animation in between; this one is instant, so the release came
+        // first and the seat stayed reserved: seating anyone in that car later, with nobody at its wheel, crashed the
+        // game (every time, in the builds without this). Released again once the reservation is through.
+        if IsDefined(vehicle) {
+            let release = new CoopSeatReleaseCallback();
+            release.vehicle = vehicle;
+            release.slot = info.slotId.id;
+            GameInstance.GetDelaySystem(game).DelayCallback(release, 0.25);
+            let again = new CoopSeatReleaseCallback();
+            again.vehicle = vehicle;
+            again.slot = info.slotId.id;
+            GameInstance.GetDelaySystem(game).DelayCallback(again, 1.0);
+        }
         this.ApplyVehicleStance(character, false);
 
         // Upright, facing where it faced: in its seat it leaned with the car, and that tilt would stay.
@@ -276,6 +291,18 @@ public static func CoopStandInsAboard(vehicle: wref<VehicleObject>) -> Bool {
     return false;
 }
 
+// A seat another player's character got out of, released (ExitVehicle), as the game's own exits release theirs.
+public class CoopSeatReleaseCallback extends DelayCallback {
+    public let vehicle: wref<VehicleObject>;
+    public let slot: CName;
+
+    public func Call() -> Void {
+        if IsDefined(this.vehicle) {
+            this.vehicle.GetVehiclePS().ToggleReserveSeatDuringUnmounting(false, this.slot);
+        }
+    }
+}
+
 // "NoDriver" for a car another player's character got out of the driver seat of, unless someone sits at its wheel
 // again, or it still carries another player's character (VehicleComponent.SendAIEvent below).
 public class CoopNoDriverCallback extends DelayCallback {
@@ -292,6 +319,7 @@ public class CoopNoDriverCallback extends DelayCallback {
             CoopLog("car: no NoDriver, another player's character still rides in it");
             return;
         }
+        CoopLog("car: NoDriver");
         let noDriver = new AIEvent();
         noDriver.name = n"NoDriver";
         this.vehicle.QueueEvent(noDriver);
@@ -303,9 +331,12 @@ public class CoopNoDriverCallback extends DelayCallback {
 // with one of them still on the passenger side. Their own player's game says when they get out.
 @wrapMethod(VehicleComponent)
 private final func SendAIEvent(eventName: CName) -> Void {
-    if Equals(eventName, n"NoDriver") && CoopStandInsAboard(this.GetVehicle()) {
-        CoopLog("car: no NoDriver, another player's character rides in it");
-        return;
+    if Equals(eventName, n"NoDriver") && CoopInSession() {
+        if CoopStandInsAboard(this.GetVehicle()) {
+            CoopLog("car: no NoDriver, another player's character rides in it");
+            return;
+        }
+        CoopLog("car: NoDriver");
     }
     wrappedMethod(eventName);
 }

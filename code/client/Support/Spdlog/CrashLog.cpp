@@ -15,6 +15,9 @@ namespace
 wchar_t s_logPath[MAX_PATH * 2]{};
 void* s_pHandler = nullptr;
 std::atomic<int> s_reports{0};
+// Set while this thread writes a report: what faults in there (reading what a register points at) is the report's own
+// to handle (__except), not another crash.
+thread_local bool t_reporting = false;
 
 // The ones that end the game. Others (C++ exceptions, breakpoints, guard pages) are part of normal running.
 bool IsFatal(DWORD aCode)
@@ -219,10 +222,13 @@ LONG CALLBACK OnException(EXCEPTION_POINTERS* apInfo)
 {
     if (!apInfo || !apInfo->ExceptionRecord || !apInfo->ContextRecord || !IsFatal(apInfo->ExceptionRecord->ExceptionCode))
         return EXCEPTION_CONTINUE_SEARCH;
+    if (t_reporting)
+        return EXCEPTION_CONTINUE_SEARCH;
 
     // The game may survive one it handles itself; a few are enough to find the real one.
     if (s_reports.fetch_add(1) >= 3)
         return EXCEPTION_CONTINUE_SEARCH;
+    t_reporting = true;
 
     static char s_text[8192];
     int length = 0;
@@ -285,6 +291,7 @@ LONG CALLBACK OnException(EXCEPTION_POINTERS* apInfo)
     // Not with the stack used up: symbols need more of it than is left.
     if (pRecord->ExceptionCode != EXCEPTION_STACK_OVERFLOW)
         AppendSourceLines(s_frames, count);
+    t_reporting = false;
     return EXCEPTION_CONTINUE_SEARCH;
 }
 

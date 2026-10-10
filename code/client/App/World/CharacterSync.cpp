@@ -146,6 +146,17 @@ void CharacterSync::Show(flecs::entity aEntity, const EntityComponent& acEntity,
         return;
     }
 
+    if (!aState.Described)
+    {
+        bool described = false;
+        if (!Red::CallVirtual(this, "DescribeAnimation", described, id))
+        {
+            Failed("DescribeAnimation");
+            described = true; // not tried every run
+        }
+        aState.Described = described;
+    }
+
     const bool refresh = ++aState.SinceRefresh >= kRefreshRuns;
     if (refresh)
     {

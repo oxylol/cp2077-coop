@@ -23,4 +23,6 @@ struct RemoteStateComponent
     int32_t WeaponAttempts{0};
     // Runs since the stance was last applied: it's applied again now and then, in case the game reset it.
     uint32_t SinceRefresh{0};
+    // What the character is animated with is in the log (CharacterSync.reds DescribeAnimation).
+    bool Described{false};
 };
