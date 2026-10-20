@@ -230,7 +230,7 @@ public class MultiplayerGameController extends inkGameController {
         this.m_connectedToServer = connected;
         if (connected) {
             this.ShowServerList(false);
-            this.AsyncSpawnFromLocal(this.GetWidget(n"hud"), n"chat");
+            this.AsyncSpawnFromLocal(this.GetWidget(n"hud"), n"chat", this, n"OnChatSpawned");
             this.m_player.UnregisterInputListener(this, n"UIConnectToServer");
             this.m_player.RegisterInputListener(this, n"UIDisconnectFromServer");
             this.m_player.RegisterInputListener(this, n"UIJob");
@@ -241,6 +241,13 @@ public class MultiplayerGameController extends inkGameController {
             this.m_player.UnregisterInputListener(this, n"UIJob");
         }
         this.UpdateInputHints();
+    }
+
+    // The chat's library item sits over the bottom-left hotkeys (phone, radio, consumables): lift it into the gap between them and the vehicle speedometer.
+    protected cb func OnChatSpawned(widget: ref<inkWidget>, userData: ref<IScriptable>) -> Bool {
+        if IsDefined(widget) {
+            widget.SetTranslation(0.0, -100.0);
+        }
     }
 
 // Server List

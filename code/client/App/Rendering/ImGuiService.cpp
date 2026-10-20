@@ -131,6 +131,10 @@ void ImGuiService::OnRenderInit()
             m_styleReference.TabRounding = 6.0f;
         }
 
+        // The overlay is only for debugging: leave the OS cursor to the game. Otherwise the Win32 backend shows an
+        // arrow on every WM_SETCURSOR while the game hides and recenters it, and the arrow flickers mid-screen.
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+
         ImGui::GetStyle() = m_styleReference;
         ImGui::GetStyle().ScaleAllSizes(scaleFromReference);
 

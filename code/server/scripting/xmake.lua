@@ -46,20 +46,21 @@ target("Server.Scripting")
             local sdk_gen_proj = path.join(script, "SdkGenerator", "SdkGenerator.csproj")
             local sdk_proj = path.join(script, "CyberpunkSdk", "CyberpunkSdk.csproj")
 
-            local files = ""
+            -- argument lists (os.runv), not command strings: paths may contain spaces
+            local codegen_args = {"run", "--project", sdk_gen_proj, "--"}
             for _, file in ipairs(target:extrafiles()) do
                 if file:endswith(".h") then
-                    files = files .. " " .. file
+                    table.insert(codegen_args, file)
                 end
             end
 
             -- Build SDK
             progress.show(opt.progress, "${color.build.target}build codegen")
-            os.run("dotnet build " .. sdk_gen_proj)
+            os.runv("dotnet", {"build", sdk_gen_proj})
             progress.show(opt.progress, "${color.build.target}codegen sdk")
-            os.run("dotnet run --project " .. sdk_gen_proj .. " -- " .. files)
+            os.runv("dotnet", codegen_args)
             progress.show(opt.progress, "${color.build.target}build sdk")
-            os.run("dotnet publish " .. sdk_proj .. " -o " .. sdk_output)
+            os.runv("dotnet", {"publish", sdk_proj, "-o", sdk_output})
 
             -- Build plugins
             local mode = is_mode("debug") and "Debug" or "Release"
@@ -71,7 +72,7 @@ target("Server.Scripting")
                 local label = string.lower(name:sub(1, -7))
 
                 progress.show(opt.progress, "${color.build.target}build " .. label)
-                os.run("dotnet publish " .. proj .. " -c " .. mode .. " -o " .. path.join(output, name))
+                os.runv("dotnet", {"publish", proj, "-c", mode, "-o", path.join(output, name)})
             end
 	--[[	end,
 		{
