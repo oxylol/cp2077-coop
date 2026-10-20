@@ -14,8 +14,8 @@ target("Server.Loader")
         local proj = path.join(script, "Server.Loader.csproj")
         local mode = is_mode("debug") and "Debug" or "Release"
         progress.show(opt.progress, "${color.build.target}build Server.Loader")
-        os.run("dotnet build " .. proj .. " -c " .. mode)
-        os.run("dotnet publish " .. proj .. " -c " .. mode .. " -o " .. target:targetdir())
+        os.runv("dotnet", {"build", proj, "-c", mode})
+        os.runv("dotnet", {"publish", proj, "-c", mode, "-o", target:targetdir()})
     end)
 
     after_install(function (target)

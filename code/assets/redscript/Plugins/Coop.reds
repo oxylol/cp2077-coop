@@ -24,7 +24,7 @@ public native class CoopNative extends IScriptable {
 // Handled by the server (code/server/scripting/CoopSystem/ServerImpl.cs).
 public native class CoopServer extends ServerRpc {
     // The story host's world: game time (seconds), weather, tracked quest.
-    public static native func ReportWorld(gameTime: Int32, weather: CName, quest: String) -> Void;
+    public static native func ReportWorld(gameTime: Int32, weather: CName, questId: String) -> Void;
     // A chat command, e.g. "/tp".
     public static native func Command(text: String) -> Void;
 }
@@ -37,8 +37,8 @@ public class CoopClient extends ClientRpc {
     }
 
     // The story host's world, for guests to follow.
-    public func ApplyWorld(gameTime: Int32, weather: CName, quest: String) -> Void {
-        CoopSession.Get().OnHostWorld(gameTime, weather, quest);
+    public func ApplyWorld(gameTime: Int32, weather: CName, questId: String) -> Void {
+        CoopSession.Get().OnHostWorld(gameTime, weather, questId);
     }
 
     // Moves this V (e.g. /tp to the host).
@@ -113,7 +113,7 @@ public class CoopSession extends ScriptableSystem {
         this.ScheduleTick();
     }
 
-    public func OnHostWorld(gameTime: Int32, weather: CName, quest: String) -> Void {
+    public func OnHostWorld(gameTime: Int32, weather: CName, questId: String) -> Void {
         if this.m_isHost {
             return;
         }
